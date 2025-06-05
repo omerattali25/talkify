@@ -873,12 +873,19 @@
         "handlers.CreateConversationRequest": {
             "type": "object",
             "required": [
-                "user_id"
+                "user_ids"
             ],
             "properties": {
-                "user_id": {
+                "user_ids": {
+                    "type": "array",
+                    "items": {
                     "type": "string",
                     "example": "123e4567-e89b-12d3-a456-426614174000"
+                    }
+                },
+                "name": {
+                    "type": "string",
+                    "example": "My Group Chat"
                 }
             }
         },

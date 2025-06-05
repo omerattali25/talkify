@@ -1,0 +1,2 @@
+-- No need to undo role assignments
+-- This is just a placeholder since we don't want to remove roles 

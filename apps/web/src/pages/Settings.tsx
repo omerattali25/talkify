@@ -34,6 +34,14 @@ export const Settings = () => {
     emailNotifications: false,
   });
 
+  if (!currentUser) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+
   const toggleTheme = () => {
     setIsDark(!isDark);
     document.documentElement.classList.toggle('dark');
@@ -48,14 +56,14 @@ export const Settings = () => {
               <div className="group relative mx-auto mb-4 h-24 w-24">
                 <div className="flex h-full w-full items-center justify-center rounded-full bg-primary/10">
                   <span className="text-3xl font-medium text-primary">
-                    {currentUser.name[0].toUpperCase()}
+                    {currentUser.username[0].toUpperCase()}
                   </span>
                 </div>
                 <button className="absolute bottom-0 right-0 rounded-full bg-primary p-2 text-primary-foreground shadow-lg">
                   <Camera className="h-4 w-4" />
                 </button>
               </div>
-              <h3 className="font-medium">{currentUser.name}</h3>
+              <h3 className="font-medium">{currentUser.username}</h3>
               <p className="text-sm text-muted-foreground">{currentUser.email}</p>
             </div>
 

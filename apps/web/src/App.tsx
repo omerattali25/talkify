@@ -1,41 +1,37 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
-import { Landing } from './pages/Landing'
-import { Chat } from './pages/Chat'
-import { ChatOverview } from './pages/ChatOverview'
-import { Settings } from './pages/Settings'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { Toaster } from 'sonner'
-import { LoginForm } from './components/auth/login-form'
-import { RegisterForm } from './components/auth/register-form'
+import { AuthProvider } from './contexts/AuthContext'
 import { ChatProvider } from './contexts/ChatContext'
+import { Login } from './pages/Login'
+import { Register } from './pages/Register'
+import { Chat } from './components/Chat'
+import { Settings } from './pages/Settings'
+import { ChatLayout } from './layouts/ChatLayout'
+import { ProtectedRoute } from './components/auth/protected-route'
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 60 * 1000,
-      refetchOnWindowFocus: false,
-    },
-  },
-})
-
-function App() {
+export const App = () => {
   return (
-    <QueryClientProvider client={queryClient}>
-      <Router>
-        <ChatProvider>
-          <Routes>
-            <Route path="/" element={<Landing />} />
-            <Route path="/chats" element={<ChatOverview />} />
-            <Route path="/chat/:id" element={<Chat />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/login" element={<LoginForm />} />
-            <Route path="/register" element={<RegisterForm />} />
-          </Routes>
-        </ChatProvider>
-      </Router>
-      <Toaster position="top-right" />
-    </QueryClientProvider>
+    <Router>
+      <AuthProvider>
+        <Routes>
+          {/* Public routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+
+          {/* Protected routes */}
+          <Route element={<ProtectedRoute />}>
+            <Route element={<ChatProvider><ChatLayout /></ChatProvider>}>
+              <Route path="/chats" element={<Chat />} />
+              <Route path="/chats/:id" element={<Chat />} />
+              <Route path="/settings" element={<Settings />} />
+            </Route>
+          </Route>
+
+          {/* Redirect root to chats */}
+          <Route path="/" element={<Navigate to="/chats" replace />} />
+        </Routes>
+        <Toaster position="top-center" />
+      </AuthProvider>
+    </Router>
   )
 }
-
-export default App

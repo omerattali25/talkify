@@ -8,8 +8,9 @@ import { Button } from '../../components/ui/button'
 import { register as registerUser } from '../../lib/api'
 
 const registerSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
+  username: z.string().min(2, 'Username must be at least 2 characters'),
   email: z.string().email('Invalid email address'),
+  phone: z.string().min(10, 'Phone number must be at least 10 characters'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
   confirmPassword: z.string(),
 }).refine((data) => data.password === data.confirmPassword, {
@@ -29,12 +30,12 @@ export function RegisterForm() {
 
   const registerMutation = useMutation({
     mutationFn: (data: RegisterFormData) => 
-      registerUser(data.email, data.password, data.name),
+      registerUser(data.email, data.password, data.username, data.phone),
     onSuccess: () => {
-      navigate('/chat')
+      navigate('/chats')
     },
     onError: (error: any) => {
-      setError(error.response?.data?.message || 'An error occurred')
+      setError(error.message || 'An error occurred')
     },
   })
 
@@ -52,19 +53,19 @@ export function RegisterForm() {
       <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>
         <div className="space-y-4 rounded-md shadow-sm">
           <div>
-            <label htmlFor="name" className="sr-only">
-              Name
+            <label htmlFor="username" className="sr-only">
+              Username
             </label>
             <input
-              {...register('name')}
-              id="name"
+              {...register('username')}
+              id="username"
               type="text"
               required
               className="relative block w-full rounded-md border-0 py-1.5 px-3 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-primary sm:text-sm sm:leading-6"
-              placeholder="Full name"
+              placeholder="Username"
             />
-            {errors.name && (
-              <p className="mt-2 text-sm text-red-600">{errors.name.message}</p>
+            {errors.username && (
+              <p className="mt-2 text-sm text-red-600">{errors.username.message}</p>
             )}
           </div>
           <div>
@@ -82,6 +83,22 @@ export function RegisterForm() {
             />
             {errors.email && (
               <p className="mt-2 text-sm text-red-600">{errors.email.message}</p>
+            )}
+          </div>
+          <div>
+            <label htmlFor="phone" className="sr-only">
+              Phone number
+            </label>
+            <input
+              {...register('phone')}
+              id="phone"
+              type="tel"
+              required
+              className="relative block w-full rounded-md border-0 py-1.5 px-3 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-primary sm:text-sm sm:leading-6"
+              placeholder="Phone number"
+            />
+            {errors.phone && (
+              <p className="mt-2 text-sm text-red-600">{errors.phone.message}</p>
             )}
           </div>
           <div>

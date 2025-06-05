@@ -13,11 +13,16 @@ definitions:
     type: object
   handlers.CreateConversationRequest:
     properties:
-      user_id:
-        example: 123e4567-e89b-12d3-a456-426614174000
+      user_ids:
+        type: array
+        items:
+          type: string
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      name:
         type: string
+        example: "My Group Chat"
     required:
-    - user_id
+      - user_ids
     type: object
   handlers.CreateMessageRequest:
     properties:
@@ -68,9 +73,6 @@ definitions:
     type: object
   handlers.UpdateUserRequest:
     properties:
-      avatar_url:
-        example: https://example.com/avatar.jpg
-        type: string
       email:
         example: john@example.com
         type: string
@@ -192,8 +194,6 @@ definitions:
     - LocationMessage
   models.User:
     properties:
-      avatar_url:
-        type: string
       created_at:
         type: string
       email:

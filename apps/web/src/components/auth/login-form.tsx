@@ -8,7 +8,7 @@ import { Button } from '../../components/ui/button'
 import { login } from '../../lib/api'
 
 const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  username: z.string().min(2, 'Username must be at least 2 characters'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
 })
 
@@ -23,17 +23,27 @@ export function LoginForm() {
   })
 
   const loginMutation = useMutation({
-    mutationFn: (data: LoginFormData) => login(data.email, data.password),
-    onSuccess: () => {
-      navigate('/chat')
+    mutationFn: (data: LoginFormData) => login(data.username, data.password),
+    onSuccess: (response) => {
+      if (response.token) {
+        localStorage.setItem('token', response.token);
+        navigate('/chats');
+      } else {
+        setError('Invalid response from server');
+      }
     },
     onError: (error: any) => {
-      setError(error.response?.data?.message || 'An error occurred')
+      if (error instanceof Error) {
+        setError(error.message);
+      } else {
+        setError('An error occurred during login');
+      }
     },
   })
 
   const onSubmit = (data: LoginFormData) => {
-    loginMutation.mutate(data)
+    setError(''); // Clear previous errors
+    loginMutation.mutate(data);
   }
 
   return (
@@ -44,45 +54,46 @@ export function LoginForm() {
         </h2>
       </div>
       <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>
-        <div className="space-y-4 rounded-md shadow-sm">
+        <div className="space-y-4">
           <div>
-            <label htmlFor="email" className="sr-only">
-              Email address
+            <label htmlFor="username" className="block text-sm font-medium">
+              Username
             </label>
             <input
-              {...register('email')}
-              id="email"
-              type="email"
-              autoComplete="email"
-              required
-              className="relative block w-full rounded-md border-0 py-1.5 px-3 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-primary sm:text-sm sm:leading-6"
-              placeholder="Email address"
+              id="username"
+              type="text"
+              {...register('username')}
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
-            {errors.email && (
-              <p className="mt-2 text-sm text-red-600">{errors.email.message}</p>
+            {errors.username && (
+              <p className="mt-1 text-sm text-red-600">{errors.username.message}</p>
             )}
           </div>
+
           <div>
-            <label htmlFor="password" className="sr-only">
+            <label htmlFor="password" className="block text-sm font-medium">
               Password
             </label>
             <input
-              {...register('password')}
               id="password"
               type="password"
-              autoComplete="current-password"
-              required
-              className="relative block w-full rounded-md border-0 py-1.5 px-3 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-primary sm:text-sm sm:leading-6"
-              placeholder="Password"
+              {...register('password')}
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             {errors.password && (
-              <p className="mt-2 text-sm text-red-600">{errors.password.message}</p>
+              <p className="mt-1 text-sm text-red-600">{errors.password.message}</p>
             )}
           </div>
         </div>
 
         {error && (
-          <div className="text-sm text-red-600 text-center">{error}</div>
+          <div className="rounded-md bg-red-50 p-4">
+            <div className="flex">
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-red-800">{error}</h3>
+              </div>
+            </div>
+          </div>
         )}
 
         <div>

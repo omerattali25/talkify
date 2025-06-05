@@ -1,12 +1,8 @@
-import { Navigate, useLocation } from 'react-router-dom'
+import { Navigate, useLocation, Outlet } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getCurrentUser } from '../../lib/api'
 
-interface ProtectedRouteProps {
-  children: React.ReactNode
-}
-
-export function ProtectedRoute({ children }: ProtectedRouteProps) {
+export function ProtectedRoute() {
   const location = useLocation()
   const { data: currentUser, isLoading } = useQuery({
     queryKey: ['currentUser'],
@@ -21,9 +17,9 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     )
   }
 
-  if (!currentUser?.data) {
+  if (!currentUser) {
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
-  return children
+  return <Outlet />
 } 

@@ -23,10 +23,16 @@ type EncryptionConfig struct {
 	KeyFile string
 }
 
+// JWTConfig holds JWT settings
+type JWTConfig struct {
+	SecretKey string
+}
+
 // Config holds all configuration settings
 type Config struct {
 	Database   DatabaseConfig
 	Encryption EncryptionConfig
+	JWT        JWTConfig
 }
 
 // LoadConfig loads configuration from environment variables
@@ -52,6 +58,9 @@ func LoadConfig() (*Config, error) {
 		Encryption: EncryptionConfig{
 			KeyFile: filepath.Join(dataDir, "encryption.key"),
 		},
+		JWT: JWTConfig{
+			SecretKey: getEnv("JWT_SECRET_KEY", "your-256-bit-secret"),
+		},
 	}, nil
 }
 
@@ -61,7 +70,7 @@ func (c *DatabaseConfig) DSN() string {
 		c.Host, c.Port, c.User, c.Password, c.DBName, c.SSLMode)
 }
 
-// getEnv gets an environment variable or returns a default value
+// getEnv gts an environment variable or returns a default value
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value

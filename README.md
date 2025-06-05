@@ -191,6 +191,50 @@ Talkify implements end-to-end encryption for sensitive data using AES-256-GCM:
   - Key usage tracking
   - Failed decryption attempts monitored
 
+## Multi-Threading Architecture
+
+### Worker Pool Implementation
+
+Talkify implements a sophisticated multi-threading architecture using Go's concurrency primitives:
+
+- **Automatic Scaling**: Worker pool automatically scales to utilize all available CPU cores
+- **Task Queue**: Buffered task queue with 100 tasks per worker capacity
+- **Graceful Shutdown**: Clean shutdown of all workers with proper task completion
+- **Background Processing**:
+  - User status updates
+  - Message delivery status updates
+  - Media processing and thumbnails
+  - Analytics and metrics collection
+
+### Concurrency Features
+
+- **Non-Blocking Operations**: 
+  - Asynchronous message processing
+  - Parallel request handling
+  - Background task execution
+- **Resource Management**:
+  - Controlled concurrency with worker pools
+  - Efficient CPU utilization
+  - Memory-aware task scheduling
+- **Error Handling**:
+  - Isolated task failures
+  - Automatic error recovery
+  - Detailed error logging
+- **Performance Monitoring**:
+  - Worker pool metrics
+  - Task processing statistics
+  - Queue length monitoring
+
+### Implementation Details
+
+The worker pool is implemented in `internal/worker/pool.go` and provides:
+
+- Dynamic worker scaling based on CPU cores
+- Context-based cancellation
+- Structured logging of worker activities
+- Task prioritization
+- Error isolation per task
+
 ## Security Considerations
 
 - All sensitive data is encrypted at rest using AES-256-GCM

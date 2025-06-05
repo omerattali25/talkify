@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"net/http"
 	"strconv"
 
@@ -10,11 +11,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// CreateMessageRequest represents the request body for creating a message
 type CreateMessageRequest struct {
-	ConversationID    *uuid.UUID         `json:"conversation_id" example:"123e4567-e89b-12d3-a456-426614174000"`
-	GroupID           *uuid.UUID         `json:"group_id" example:"123e4567-e89b-12d3-a456-426614174000"`
+	ConversationID    uuid.UUID          `json:"conversation_id" example:"123e4567-e89b-12d3-a456-426614174000"`
 	Content           string             `json:"content" binding:"required" example:"Hello, how are you?"`
-	MessageType       models.MessageType `json:"message_type" binding:"required" example:"text"`
+	MessageType       models.MessageType `json:"message_type,omitempty" example:"text"`
+	Type              models.MessageType `json:"type,omitempty" example:"text"`
 	ReplyToID         *uuid.UUID         `json:"reply_to_id" example:"123e4567-e89b-12d3-a456-426614174000"`
 	MediaURL          *string            `json:"media_url" example:"https://example.com/image.jpg"`
 	MediaThumbnailURL *string            `json:"media_thumbnail_url" example:"https://example.com/thumbnail.jpg"`
@@ -26,21 +28,25 @@ type UpdateMessageRequest struct {
 	Content string `json:"content" binding:"required" example:"Updated message content"`
 }
 
+type BatchUpdateMessageStatusRequest struct {
+	MessageIDs []uuid.UUID          `json:"message_ids" binding:"required"`
+	Status     models.MessageStatus `json:"status" binding:"required,oneof=sending sent delivered read failed"`
+}
+
 func (h *Handler) RegisterMessageRoutes(r *gin.RouterGroup) {
-	messages := r.Group("/messages")
-	messages.Use(h.AuthMiddleware())
+	r.Use(h.AuthMiddleware())
 	{
-		messages.POST("", h.CreateMessage)
-		messages.GET("/conversation/:id", h.GetConversationMessages)
-		messages.GET("/group/:id", h.GetGroupMessages)
-		messages.PUT("/:id", h.UpdateMessage)
-		messages.DELETE("/:id", h.DeleteMessage)
-		messages.POST("/:id/status", h.UpdateMessageStatus)
+		r.POST("", h.CreateMessage)
+		r.GET("/conversation/:id", h.GetConversationMessages)
+		r.PUT("/:id", h.UpdateMessage)
+		r.DELETE("/:id", h.DeleteMessage)
+		r.POST("/:id/status", h.UpdateMessageStatus)
+		r.POST("/status/batch", h.BatchUpdateMessageStatus)
 	}
 }
 
 // @Summary Create a new message
-// @Description Send a new message in a conversation or group
+// @Description Create a new message in a conversation
 // @Tags messages
 // @Accept json
 // @Produce json
@@ -57,13 +63,14 @@ func (h *Handler) CreateMessage(c *gin.Context) {
 		return
 	}
 
-	if req.ConversationID == nil && req.GroupID == nil {
-		h.respondWithError(c, http.StatusBadRequest, "Either conversation_id or group_id must be provided")
-		return
+	// Use MessageType if provided, otherwise use Type
+	messageType := req.MessageType
+	if messageType == "" {
+		messageType = req.Type
 	}
 
-	if req.ConversationID != nil && req.GroupID != nil {
-		h.respondWithError(c, http.StatusBadRequest, "Cannot specify both conversation_id and group_id")
+	if messageType == "" {
+		h.respondWithError(c, http.StatusBadRequest, "message_type or type is required")
 		return
 	}
 
@@ -73,14 +80,34 @@ func (h *Handler) CreateMessage(c *gin.Context) {
 		return
 	}
 
+	// Check if user is a participant in the conversation with a valid role
+	var participantRole string
+	err = h.db.Get(&participantRole, `
+		SELECT role FROM conversation_participants
+		WHERE conversation_id = $1 AND user_id = $2
+	`, req.ConversationID, senderID)
+	if err == sql.ErrNoRows {
+		h.respondWithError(c, http.StatusForbidden, "Not a participant in this conversation")
+		return
+	}
+	if err != nil {
+		h.respondWithError(c, http.StatusInternalServerError, "Failed to check conversation access")
+		return
+	}
+
+	// Verify the role is valid
+	if participantRole == "" {
+		h.respondWithError(c, http.StatusForbidden, "Invalid participant role")
+		return
+	}
+
 	messageService := models.NewMessageService(h.db, h.encryptor)
 	message := &models.Message{
 		ConversationID:    req.ConversationID,
-		GroupID:           req.GroupID,
 		SenderID:          senderID,
 		ReplyToID:         req.ReplyToID,
 		Content:           req.Content,
-		MessageType:       req.MessageType,
+		MessageType:       messageType,
 		MediaURL:          req.MediaURL,
 		MediaThumbnailURL: req.MediaThumbnailURL,
 		MediaSize:         req.MediaSize,
@@ -115,44 +142,44 @@ func (h *Handler) GetConversationMessages(c *gin.Context) {
 		return
 	}
 
+	userID, err := uuid.Parse(c.GetHeader("X-User-ID"))
+	if err != nil {
+		h.respondWithError(c, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	// Check if user is a participant in the conversation
+	var isParticipant bool
+	err = h.db.Get(&isParticipant, `
+		SELECT EXISTS(
+			SELECT 1 FROM conversation_participants
+			WHERE conversation_id = $1 AND user_id = $2
+		)
+	`, conversationID, userID)
+	if err != nil {
+		h.respondWithError(c, http.StatusInternalServerError, "Failed to check conversation access")
+		return
+	}
+	if !isParticipant {
+		h.respondWithError(c, http.StatusNotFound, "Conversation not found")
+		return
+	}
+
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+
+	// Validate pagination parameters
+	if limit < 1 || limit > 100 {
+		h.respondWithError(c, http.StatusBadRequest, "Invalid limit. Must be between 1 and 100")
+		return
+	}
+	if offset < 0 {
+		h.respondWithError(c, http.StatusBadRequest, "Invalid offset. Must be non-negative")
+		return
+	}
 
 	messageService := models.NewMessageService(h.db, h.encryptor)
 	messages, err := messageService.GetConversationMessages(conversationID, limit, offset)
-	if err != nil {
-		h.respondWithError(c, http.StatusInternalServerError, "Failed to get messages")
-		return
-	}
-
-	h.respondWithSuccess(c, http.StatusOK, messages)
-}
-
-// @Summary Get group messages
-// @Description Get messages from a specific group with pagination
-// @Tags messages
-// @Accept json
-// @Produce json
-// @Param id path string true "Group ID"
-// @Param limit query int false "Number of messages to return (default: 50)"
-// @Param offset query int false "Number of messages to skip (default: 0)"
-// @Success 200 {array} models.Message
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /messages/group/{id} [get]
-func (h *Handler) GetGroupMessages(c *gin.Context) {
-	groupID, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		h.respondWithError(c, http.StatusBadRequest, "Invalid group ID")
-		return
-	}
-
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-
-	messageService := models.NewMessageService(h.db, h.encryptor)
-	messages, err := messageService.GetGroupMessages(groupID, limit, offset)
 	if err != nil {
 		h.respondWithError(c, http.StatusInternalServerError, "Failed to get messages")
 		return
@@ -246,7 +273,7 @@ func (h *Handler) DeleteMessage(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param id path string true "Message ID"
-// @Param status query string false "Message status (delivered or read, default: read)"
+// @Param status query string true "Message status (sending, sent, delivered, read, failed)"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
@@ -265,14 +292,51 @@ func (h *Handler) UpdateMessageStatus(c *gin.Context) {
 		return
 	}
 
-	status := c.DefaultQuery("status", "read")
-	if status != "delivered" && status != "read" {
-		h.respondWithError(c, http.StatusBadRequest, "Invalid status. Must be 'delivered' or 'read'")
+	status := models.MessageStatus(c.Query("status"))
+	if status != models.StatusSending &&
+		status != models.StatusSent &&
+		status != models.StatusDelivered &&
+		status != models.StatusRead &&
+		status != models.StatusFailed {
+		h.respondWithError(c, http.StatusBadRequest, "Invalid status. Must be 'sending', 'sent', 'delivered', 'read', or 'failed'")
 		return
 	}
 
 	messageService := models.NewMessageService(h.db, h.encryptor)
 	if err := messageService.UpdateMessageStatus(messageID, userID, status); err != nil {
+		h.respondWithError(c, http.StatusInternalServerError, "Failed to update message status")
+		return
+	}
+
+	h.respondWithSuccess(c, http.StatusOK, gin.H{"message": "Message status updated successfully"})
+}
+
+// @Summary Batch update message status
+// @Description Update the status of multiple messages at once
+// @Tags messages
+// @Accept json
+// @Produce json
+// @Param request body BatchUpdateMessageStatusRequest true "Message IDs and status"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /messages/status/batch [post]
+func (h *Handler) BatchUpdateMessageStatus(c *gin.Context) {
+	var req BatchUpdateMessageStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.respondWithError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	userID, err := uuid.Parse(c.GetHeader("X-User-ID"))
+	if err != nil {
+		h.respondWithError(c, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	messageService := models.NewMessageService(h.db, h.encryptor)
+	if err := messageService.BatchUpdateMessageStatus(req.MessageIDs, userID, req.Status); err != nil {
 		h.respondWithError(c, http.StatusInternalServerError, "Failed to update message status")
 		return
 	}

@@ -53,9 +53,15 @@
   * {
     @apply border-border;
   }
+  html, body {
+    @apply h-full w-full m-0 p-0;
+  }
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  #root {
+    @apply h-full w-full;
   }
 }
 

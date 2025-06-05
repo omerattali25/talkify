@@ -4,6 +4,8 @@ import (
 	"talkify/apps/api/internal/encryption"
 	"time"
 
+	"fmt"
+
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"golang.org/x/crypto/bcrypt"
@@ -15,8 +17,7 @@ type User struct {
 	Email        string     `db:"email" json:"email"`
 	Phone        string     `db:"phone" json:"phone"`
 	PasswordHash string     `db:"password_hash" json:"-"`
-	Status       string     `db:"status" json:"status,omitempty"`
-	AvatarURL    string     `db:"avatar_url" json:"avatar_url,omitempty"`
+	Status       string     `db:"status" json:"status"`
 	LastSeen     *time.Time `db:"last_seen" json:"last_seen,omitempty"`
 	IsOnline     bool       `db:"is_online" json:"is_online"`
 	IsActive     bool       `db:"is_active" json:"is_active"`
@@ -104,18 +105,30 @@ func (s *UserService) Login(input *LoginInput) (*User, error) {
 	`, input.Username)
 
 	if err != nil {
-		return nil, ErrNotFound
+		if err.Error() == "sql: no rows in result set" {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("database error: %v", err)
 	}
 
 	// Check password
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password))
 	if err != nil {
+		fmt.Printf("Password comparison failed: %v\nHash: %s\nInput: %s\n", err, user.PasswordHash, input.Password)
 		return nil, ErrUnauthorized
 	}
 
 	// Decrypt sensitive data
-	user.Email, _ = s.encryptor.DecryptString(user.Email)
-	user.Phone, _ = s.encryptor.DecryptString(user.Phone)
+	var decryptErr error
+	user.Email, decryptErr = s.encryptor.DecryptString(user.Email)
+	if decryptErr != nil {
+		return nil, fmt.Errorf("failed to decrypt email: %v", decryptErr)
+	}
+
+	user.Phone, decryptErr = s.encryptor.DecryptString(user.Phone)
+	if decryptErr != nil {
+		return nil, fmt.Errorf("failed to decrypt phone: %v", decryptErr)
+	}
 
 	// Update last seen
 	_, err = s.db.Exec(`
@@ -123,6 +136,10 @@ func (s *UserService) Login(input *LoginInput) (*User, error) {
 		SET last_seen = CURRENT_TIMESTAMP, is_online = true 
 		WHERE id = $1
 	`, user.ID)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to update last seen: %v", err)
+	}
 
 	return user, nil
 }
@@ -186,8 +203,8 @@ func (s *UserService) GetByUsername(username string) (*User, error) {
 func (s *UserService) Update(user *User) error {
 	query := `
 		UPDATE users 
-		SET username = $1, email = $2, phone = $3, status = $4, avatar_url = $5, is_online = $6
-		WHERE id = $7
+		SET username = $1, email = $2, phone = $3, status = $4, is_online = $5
+		WHERE id = $6
 		RETURNING updated_at`
 
 	return s.db.QueryRowx(query,
@@ -195,7 +212,6 @@ func (s *UserService) Update(user *User) error {
 		user.Email,
 		user.Phone,
 		user.Status,
-		user.AvatarURL,
 		user.IsOnline,
 		user.ID,
 	).Scan(&user.UpdatedAt)
@@ -214,4 +230,36 @@ func (s *UserService) UpdateLastSeen(id uuid.UUID) error {
 func (s *UserService) SetOnlineStatus(id uuid.UUID, isOnline bool) error {
 	_, err := s.db.Exec("UPDATE users SET is_online = $1, last_seen = CURRENT_TIMESTAMP WHERE id = $2", isOnline, id)
 	return err
+}
+
+func (s *UserService) GetAll() ([]*User, error) {
+	var users []*User
+	err := s.db.Select(&users, `
+		SELECT * FROM users 
+		WHERE is_active = true
+		ORDER BY username ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get users: %v", err)
+	}
+
+	if len(users) == 0 {
+		return []*User{}, nil // Return empty slice instead of nil
+	}
+
+	// Decrypt sensitive data for each user
+	for _, user := range users {
+		var decryptErr error
+		user.Email, decryptErr = s.encryptor.DecryptString(user.Email)
+		if decryptErr != nil {
+			return nil, fmt.Errorf("failed to decrypt email for user %s: %v", user.Username, decryptErr)
+		}
+
+		user.Phone, decryptErr = s.encryptor.DecryptString(user.Phone)
+		if decryptErr != nil {
+			return nil, fmt.Errorf("failed to decrypt phone for user %s: %v", user.Username, decryptErr)
+		}
+	}
+
+	return users, nil
 }

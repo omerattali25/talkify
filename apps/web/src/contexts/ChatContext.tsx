@@ -1,189 +1,272 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import type { ChatRoom, User, Message } from '../types';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '../lib/api';
+import { chatWs } from '../lib/websocket';
+import type { User, Conversation, Message, CreateConversationInput } from '../types/api';
 
 interface ChatContextType {
-  chats: ChatRoom[];
-  currentUser: User;
-  addChat: (name: string, participants: User[]) => void;
-  sendMessage: (chatId: string, content: string) => void;
-  deleteChat: (chatId: string) => void;
-  archiveChat: (chatId: string) => void;
-  getChat: (chatId: string) => ChatRoom | undefined;
-  searchChats: (query: string) => ChatRoom[];
-  getArchivedChats: () => ChatRoom[];
-  getUnreadChats: () => ChatRoom[];
+  conversations: Conversation[];
+  currentUser: User | undefined;
+  isLoading: boolean;
+  error: Error | null;
+  sendMessage: (conversationId: string, content: string) => Promise<void>;
+  createConversation: (input: CreateConversationInput) => Promise<void>;
+  markAsRead: (conversationId: string) => Promise<void>;
+  typingUsers: Record<string, Set<string>>;
+  sendTypingIndicator: (conversationId: string, isTyping: boolean) => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
-// Mock current user
-const mockCurrentUser: User = {
-  id: '1',
-  name: 'John Doe',
-  email: 'john@example.com',
-  createdAt: new Date(),
-};
-
-// Mock users for conversations
-const mockUsers: User[] = [
-  mockCurrentUser,
-  {
-    id: '2',
-    name: 'Jane Smith',
-    email: 'jane@example.com',
-    createdAt: new Date(),
-  },
-  {
-    id: '3',
-    name: 'Alice Johnson',
-    email: 'alice@example.com',
-    createdAt: new Date(),
-  },
-  {
-    id: '4',
-    name: 'Bob Wilson',
-    email: 'bob@example.com',
-    createdAt: new Date(),
-  },
-];
-
-// Initial mock chats
-const initialChats: ChatRoom[] = [
-  {
-    id: '1',
-    name: 'Team Project',
-    participants: [mockUsers[0], mockUsers[1]],
-    messages: [
-      {
-        id: '1',
-        content: "Hey, how's the progress on the new feature?",
-        sender: mockUsers[1],
-        createdAt: new Date(Date.now() - 3600000),
-      },
-      {
-        id: '2',
-        content: "It's coming along well! I've completed the main functionality.",
-        sender: mockUsers[0],
-        createdAt: new Date(Date.now() - 3500000),
-      },
-    ],
-    lastMessage: {
-      id: '2',
-      content: "It's coming along well! I've completed the main functionality.",
-      sender: mockUsers[0],
-      createdAt: new Date(Date.now() - 3500000),
-    },
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    isArchived: false,
-    unreadCount: 0,
-  },
-  {
-    id: '2',
-    name: 'Design Team',
-    participants: [mockUsers[0], mockUsers[2], mockUsers[3]],
-    messages: [
-      {
-        id: '1',
-        content: 'The new designs look great!',
-        sender: mockUsers[2],
-        createdAt: new Date(Date.now() - 7200000),
-      },
-    ],
-    lastMessage: {
-      id: '1',
-      content: 'The new designs look great!',
-      sender: mockUsers[2],
-      createdAt: new Date(Date.now() - 7200000),
-    },
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    isArchived: false,
-    unreadCount: 1,
-  },
-];
-
 export const ChatProvider = ({ children }: { children: ReactNode }) => {
-  const [chats, setChats] = useState<ChatRoom[]>(initialChats);
+  const queryClient = useQueryClient();
+  const [typingUsers, setTypingUsers] = useState<Record<string, Set<string>>>({});
 
-  const addChat = (name: string, participants: User[]) => {
-    const newChat: ChatRoom = {
-      id: Date.now().toString(),
-      name,
-      participants: [...participants, mockCurrentUser],
-      messages: [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      isArchived: false,
-      unreadCount: 0,
+  // Handle WebSocket connection/disconnection
+  useEffect(() => {
+    console.log('ChatContext: Setting up WebSocket cleanup');
+    return () => {
+      console.log('ChatContext: Cleaning up WebSocket connection');
+      chatWs.disconnect();
     };
-    setChats((prev) => [newChat, ...prev]);
-  };
+  }, []);
 
-  const sendMessage = (chatId: string, content: string) => {
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      content,
-      sender: mockCurrentUser,
-      createdAt: new Date(),
-    };
+  // Subscribe to all chat-related WebSocket messages
+  useEffect(() => {
+    console.log('ChatContext: Setting up WebSocket event subscription');
+    const unsubscribe = chatWs.subscribe((event) => {
+      console.log('ChatContext: Received WebSocket event', event);
+      if (event.type === 'new_message') {
+        console.log('ChatContext: Invalidating queries for new message');
+        queryClient.invalidateQueries({ queryKey: ['messages', event.payload.conversation_id] });
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      } else if (event.type === 'message_updated') {
+        // Update message read status in cache
+        queryClient.setQueryData(['messages', event.payload.conversation_id], (oldMessages: Message[] | undefined) => {
+          if (!oldMessages) return oldMessages;
+          return oldMessages.map(msg => 
+            msg.id === event.payload.id ? event.payload : msg
+          );
+        });
+      } else if (event.type === 'message_read') {
+        // Update messages read status
+        const conversation = queryClient.getQueryData<Conversation[]>(['conversations'])?.find(
+          c => c.id === event.payload.conversation_id
+        );
+        
+        if (conversation) {
+          console.log('ChatContext: Processing message_read event', {
+            conversation,
+            payload: event.payload,
+            currentUser
+          });
 
-    setChats((prev) =>
-      prev.map((chat) => {
-        if (chat.id === chatId) {
-          return {
-            ...chat,
-            messages: [...chat.messages, newMessage],
-            lastMessage: newMessage,
-            updatedAt: new Date(),
-          };
+          // Update messages in the cache
+          queryClient.setQueryData(['messages', event.payload.conversation_id], (oldMessages: Message[] | undefined) => {
+            if (!oldMessages) return oldMessages;
+            
+            return oldMessages.map(msg => {
+              // Only update messages that were sent by the current user and read by someone else
+              if (msg.sender_id === currentUser?.id && event.payload.message_ids.includes(msg.id)) {
+                const newReadBy = [...new Set([...msg.read_by, event.payload.user_id])];
+                const allParticipantsExceptSender = conversation.participants.filter(p => p.user_id !== currentUser.id);
+                const allOtherParticipantsRead = allParticipantsExceptSender.every(p => 
+                  newReadBy.includes(p.user_id)
+                );
+
+                return {
+                  ...msg,
+                  read_by: newReadBy,
+                  status: allOtherParticipantsRead ? 'read' : 'delivered'
+                };
+              }
+              return msg;
+            });
+          });
+
+          // Update conversation unread count
+          queryClient.setQueryData(['conversations'], (oldConversations: Conversation[] | undefined) => {
+            if (!oldConversations) return oldConversations;
+            return oldConversations.map(conv => {
+              if (conv.id === event.payload.conversation_id) {
+                // Only update unread count for the user who read the messages
+                return { 
+                  ...conv, 
+                  unread_count: event.payload.user_id === currentUser?.id ? 0 : conv.unread_count 
+                };
+              }
+              return conv;
+            });
+          });
         }
-        return chat;
-      })
-    );
+      } else if (event.type === 'typing_start') {
+        console.log('ChatContext: Handling typing start event');
+        setTypingUsers(prev => {
+          const conversationTypers = prev[event.payload.conversation_id] || new Set();
+          conversationTypers.add(event.payload.user_id);
+          return { ...prev, [event.payload.conversation_id]: conversationTypers };
+        });
+      } else if (event.type === 'typing_stop') {
+        console.log('ChatContext: Handling typing stop event');
+        setTypingUsers(prev => {
+          const conversationTypers = prev[event.payload.conversation_id] || new Set();
+          conversationTypers.delete(event.payload.user_id);
+          return { ...prev, [event.payload.conversation_id]: conversationTypers };
+        });
+      }
+    });
+
+    return () => {
+      console.log('ChatContext: Cleaning up WebSocket event subscription');
+      unsubscribe();
+    };
+  }, [queryClient]);
+
+  // Fetch current user
+  const { data: currentUser, isLoading: isLoadingUser, error: userError } = useQuery({
+    queryKey: ['currentUser'],
+    queryFn: () => {
+      console.log('ChatContext: Fetching current user');
+      return api.getCurrentUser();
+    },
+  });
+
+  // Fetch conversations
+  const { data: conversations = [], isLoading: isLoadingConversations, error: conversationsError } = useQuery<Conversation[], Error>({
+    queryKey: ['conversations'],
+    queryFn: async () => {
+      console.log('ChatContext: Fetching conversations');
+      const data = await api.getConversations();
+      console.log('ChatContext: Successfully fetched conversations', data);
+      return data;
+    },
+    enabled: !!currentUser,
+    retry: false,
+    staleTime: 1000 * 60, // 1 minute
+    gcTime: 1000 * 60 * 5 // 5 minutes
+  });
+
+  // Send message mutation
+  const sendMessageMutation = useMutation({
+    mutationFn: (params: { conversationId: string; content: string }) => {
+      console.log('ChatContext: Sending message', params);
+      return api.sendMessage({ conversation_id: params.conversationId, content: params.content, type: 'text' });
+    },
+    onSuccess: () => {
+      console.log('ChatContext: Message sent successfully');
+      queryClient.invalidateQueries({ queryKey: ['conversations'] as const });
+      queryClient.invalidateQueries({ queryKey: ['messages'] as const });
+    },
+    onError: (error: Error) => {
+      console.error('ChatContext: Failed to send message', error);
+    }
+  });
+
+  // Create conversation mutation
+  const createConversationMutation = useMutation({
+    mutationFn: (input: CreateConversationInput) => {
+      console.log('ChatContext: Creating conversation', input);
+      return api.createConversation(input);
+    },
+    onSuccess: () => {
+      console.log('ChatContext: Conversation created successfully');
+      queryClient.invalidateQueries({ queryKey: ['conversations'] as const });
+    },
+    onError: (error: Error) => {
+      console.error('ChatContext: Failed to create conversation', error);
+    }
+  });
+
+  // Mark conversation as read mutation
+  const markAsReadMutation = useMutation({
+    mutationFn: (conversationId: string) => {
+      console.log('ChatContext: Marking conversation as read', conversationId);
+      return api.markConversationAsRead(conversationId);
+    },
+    onMutate: async (conversationId) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['conversations'] });
+      await queryClient.cancelQueries({ queryKey: ['messages', conversationId] });
+
+      // Snapshot the previous values
+      const previousConversations = queryClient.getQueryData<Conversation[]>(['conversations']);
+      const previousMessages = queryClient.getQueryData<Message[]>(['messages', conversationId]);
+
+      // Optimistically update conversations
+      if (previousConversations) {
+        queryClient.setQueryData(['conversations'], previousConversations.map(conv => {
+          if (conv.id === conversationId) {
+            return { ...conv, unread_count: 0 };
+          }
+          return conv;
+        }));
+      }
+
+      // Optimistically update messages
+      if (previousMessages && currentUser?.id) {
+        const conversation = previousConversations?.find(c => c.id === conversationId);
+        if (conversation) {
+          queryClient.setQueryData(['messages', conversationId], previousMessages.map(msg => {
+            if (!msg.read_by.includes(currentUser.id)) {
+              return {
+                ...msg,
+                read_by: [...msg.read_by, currentUser.id],
+                status: msg.read_by.length + 1 === conversation.participants.length ? 'read' : 'delivered'
+              };
+            }
+            return msg;
+          }));
+        }
+      }
+
+      return { previousConversations, previousMessages };
+    },
+    onError: (err, conversationId, context) => {
+      // If the mutation fails, use the context to roll back
+      if (context?.previousConversations) {
+        queryClient.setQueryData(['conversations'], context.previousConversations);
+      }
+      if (context?.previousMessages) {
+        queryClient.setQueryData(['messages', conversationId], context.previousMessages);
+      }
+      console.error('ChatContext: Failed to mark conversation as read', err);
+    },
+    onSettled: (_, __, conversationId) => {
+      // Only invalidate the specific conversation and its messages
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+    }
+  });
+
+  const sendTypingIndicator = (conversationId: string, isTyping: boolean) => {
+    if (!currentUser?.id) {
+      console.warn('ChatContext: Cannot send typing indicator - no current user');
+      return;
+    }
+    console.log('ChatContext: Sending typing indicator', { conversationId, isTyping });
+    chatWs.send({
+      type: isTyping ? 'typing_start' : 'typing_stop',
+      payload: { conversation_id: conversationId, user_id: currentUser.id }
+    });
   };
 
-  const deleteChat = (chatId: string) => {
-    setChats((prev) => prev.filter((chat) => chat.id !== chatId));
-  };
-
-  const archiveChat = (chatId: string) => {
-    setChats((prev) =>
-      prev.map((chat) =>
-        chat.id === chatId ? { ...chat, isArchived: !chat.isArchived } : chat
-      )
-    );
-  };
-
-  const getChat = (chatId: string) => {
-    return chats.find((chat) => chat.id === chatId);
-  };
-
-  const searchChats = (query: string) => {
-    const lowercaseQuery = query.toLowerCase();
-    return chats.filter(
-      (chat) =>
-        chat.name.toLowerCase().includes(lowercaseQuery) ||
-        chat.participants.some((p) => p.name.toLowerCase().includes(lowercaseQuery)) ||
-        chat.messages.some((m) => m.content.toLowerCase().includes(lowercaseQuery))
-    );
-  };
-
-  const getArchivedChats = () => chats.filter((chat) => chat.isArchived);
-  const getUnreadChats = () => chats.filter((chat) => chat.unreadCount > 0);
-
-  const value = {
-    chats,
-    currentUser: mockCurrentUser,
-    addChat,
-    sendMessage,
-    deleteChat,
-    archiveChat,
-    getChat,
-    searchChats,
-    getArchivedChats,
-    getUnreadChats,
+  const value: ChatContextType = {
+    conversations,
+    currentUser,
+    isLoading: isLoadingUser || isLoadingConversations,
+    error: userError || conversationsError,
+    sendMessage: async (conversationId: string, content: string) => {
+      await sendMessageMutation.mutateAsync({ conversationId, content });
+    },
+    createConversation: async (input: CreateConversationInput) => {
+      await createConversationMutation.mutateAsync(input);
+    },
+    markAsRead: async (conversationId: string) => {
+      await markAsReadMutation.mutateAsync(conversationId);
+    },
+    typingUsers,
+    sendTypingIndicator,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
