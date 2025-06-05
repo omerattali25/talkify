@@ -559,19 +559,27 @@
         "/users": {
             "post": {
                 "description": "Register a new user in the system",
-                "consumes": ["application/json"],
-                "produces": ["application/json"],
-                "tags": ["users"],
-                "summary": "Register new user",
-                "parameters": [{
-                    "description": "User registration info",
-                    "name": "user",
-                    "in": "body",
-                    "required": true,
-                    "schema": {
-                        "$ref": "#/definitions/models.CreateUserInput"
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Register a new user",
+                "parameters": [
+                    {
+                        "description": "User registration info",
+                        "name": "user",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.CreateUserInput"
+                        }
                     }
-                }],
+                ],
                 "responses": {
                     "201": {
                         "description": "Created",
@@ -584,6 +592,12 @@
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -591,73 +605,27 @@
         "/users/login": {
             "post": {
                 "description": "Authenticate a user and return their details",
-                "consumes": ["application/json"],
-                "produces": ["application/json"],
-                "tags": ["users"],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
                 "summary": "Login user",
-                "parameters": [{
-                    "description": "Login credentials",
-                    "name": "credentials",
-                    "in": "body",
-                    "required": true,
-                    "schema": {
-                        "$ref": "#/definitions/models.LoginInput"
-                    }
-                }],
-                "responses": {
-                    "200": {
-                        "description": "OK",
+                "parameters": [
+                    {
+                        "description": "Login credentials",
+                        "name": "credentials",
+                        "in": "body",
+                        "required": true,
                         "schema": {
-                            "$ref": "#/definitions/models.User"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/models.LoginInput"
                         }
                     }
-                }
-            }
-        },
-        "/users/me": {
-            "get": {
-                "security": [{"ApiKeyAuth": []}],
-                "description": "Get the profile of the currently authenticated user",
-                "produces": ["application/json"],
-                "tags": ["users"],
-                "summary": "Get current user profile",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/models.User"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
-                        }
-                    }
-                }
-            },
-            "put": {
-                "security": [{"ApiKeyAuth": []}],
-                "description": "Update the profile of the currently authenticated user",
-                "consumes": ["application/json"],
-                "produces": ["application/json"],
-                "tags": ["users"],
-                "summary": "Update current user",
-                "parameters": [{
-                    "description": "User information",
-                    "name": "user",
-                    "in": "body",
-                    "required": true,
-                    "schema": {
-                        "$ref": "#/definitions/handlers.UpdateUserRequest"
-                    }
-                }],
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -670,41 +638,164 @@
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/me": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get the profile of the currently authenticated user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get current user profile",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.User"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Update the profile of the currently authenticated user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Update current user profile",
+                "parameters": [
+                    {
+                        "description": "User information",
+                        "name": "user",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.UpdateUserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.User"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
                     }
                 }
             }
         },
         "/users/me/password": {
             "put": {
-                "security": [{"ApiKeyAuth": []}],
-                "description": "Change the password of the authenticated user",
-                "consumes": ["application/json"],
-                "produces": ["application/json"],
-                "tags": ["users"],
-                "summary": "Change user password",
-                "parameters": [{
-                    "description": "Password change info",
-                    "name": "passwords",
-                    "in": "body",
-                    "required": true,
-                    "schema": {
-                        "$ref": "#/definitions/handlers.ChangePasswordInput"
+                "security": [
+                    {
+                        "ApiKeyAuth": []
                     }
-                }],
+                ],
+                "description": "Change the password of the currently authenticated user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Change user password",
+                "parameters": [
+                    {
+                        "description": "Password change info",
+                        "name": "passwords",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ChangePasswordInput"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "type": "object",
-                            "properties": {
-                                "message": {
-                                    "type": "string"
-                                }
+                            "additionalProperties": {
+                                "type": "string"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
@@ -714,23 +805,42 @@
         },
         "/users/{id}": {
             "get": {
-                "security": [{"ApiKeyAuth": []}],
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get user details by their ID",
-                "produces": ["application/json"],
-                "tags": ["users"],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
                 "summary": "Get user by ID",
-                "parameters": [{
-                    "type": "string",
-                    "description": "User ID",
-                    "name": "id",
-                    "in": "path",
-                    "required": true
-                }],
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/models.User"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
                         }
                     },
                     "404": {
@@ -744,6 +854,22 @@
         }
     },
     "definitions": {
+        "handlers.ChangePasswordInput": {
+            "type": "object",
+            "required": [
+                "current_password",
+                "new_password"
+            ],
+            "properties": {
+                "current_password": {
+                    "type": "string"
+                },
+                "new_password": {
+                    "type": "string",
+                    "minLength": 8
+                }
+            }
+        },
         "handlers.CreateConversationRequest": {
             "type": "object",
             "required": [
@@ -805,38 +931,6 @@
                 }
             }
         },
-        "models.CreateUserInput": {
-            "type": "object",
-            "required": ["username", "email", "phone", "password"],
-            "properties": {
-                "username": {
-                    "type": "string"
-                },
-                "email": {
-                    "type": "string",
-                    "format": "email"
-                },
-                "phone": {
-                    "type": "string"
-                },
-                "password": {
-                    "type": "string",
-                    "minLength": 8
-                }
-            }
-        },
-        "models.LoginInput": {
-            "type": "object",
-            "required": ["username", "password"],
-            "properties": {
-                "username": {
-                    "type": "string"
-                },
-                "password": {
-                    "type": "string"
-                }
-            }
-        },
         "handlers.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -860,13 +954,12 @@
         "handlers.UpdateUserRequest": {
             "type": "object",
             "properties": {
-                "username": {
+                "avatar_url": {
                     "type": "string",
-                    "example": "johndoe"
+                    "example": "https://example.com/avatar.jpg"
                 },
                 "email": {
                     "type": "string",
-                    "format": "email",
                     "example": "john@example.com"
                 },
                 "phone": {
@@ -877,22 +970,9 @@
                     "type": "string",
                     "example": "Hello, I'm using Talkify!"
                 },
-                "avatar_url": {
+                "username": {
                     "type": "string",
-                    "example": "https://example.com/avatar.jpg"
-                }
-            }
-        },
-        "handlers.ChangePasswordInput": {
-            "type": "object",
-            "required": ["current_password", "new_password"],
-            "properties": {
-                "current_password": {
-                    "type": "string"
-                },
-                "new_password": {
-                    "type": "string",
-                    "minLength": 8
+                    "example": "johndoe"
                 }
             }
         },
@@ -932,6 +1012,45 @@
                     "$ref": "#/definitions/models.User"
                 },
                 "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.CreateUserInput": {
+            "type": "object",
+            "required": [
+                "email",
+                "password",
+                "phone",
+                "username"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string",
+                    "minLength": 8
+                },
+                "phone": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.LoginInput": {
+            "type": "object",
+            "required": [
+                "password",
+                "username"
+            ],
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "username": {
                     "type": "string"
                 }
             }
@@ -1003,25 +1122,36 @@
                 "location"
             ],
             "x-enum-varnames": [
-                "MessageTypeText",
-                "MessageTypeImage",
-                "MessageTypeVideo",
-                "MessageTypeAudio",
-                "MessageTypeFile",
-                "MessageTypeLocation"
+                "TextMessage",
+                "ImageMessage",
+                "VideoMessage",
+                "AudioMessage",
+                "FileMessage",
+                "LocationMessage"
             ]
         },
         "models.User": {
             "type": "object",
             "properties": {
-                "id": {
-                    "type": "string",
-                    "format": "uuid"
+                "avatar_url": {
+                    "type": "string"
                 },
-                "username": {
+                "created_at": {
                     "type": "string"
                 },
                 "email": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "is_online": {
+                    "type": "boolean"
+                },
+                "last_seen": {
                     "type": "string"
                 },
                 "phone": {
@@ -1030,26 +1160,11 @@
                 "status": {
                     "type": "string"
                 },
-                "avatar_url": {
+                "updated_at": {
                     "type": "string"
                 },
-                "last_seen": {
-                    "type": "string",
-                    "format": "date-time"
-                },
-                "is_online": {
-                    "type": "boolean"
-                },
-                "is_active": {
-                    "type": "boolean"
-                },
-                "created_at": {
-                    "type": "string",
-                    "format": "date-time"
-                },
-                "updated_at": {
-                    "type": "string",
-                    "format": "date-time"
+                "username": {
+                    "type": "string"
                 }
             }
         }

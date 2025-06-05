@@ -140,7 +140,7 @@ type ChangePasswordInput struct {
 }
 
 // @Summary Change user password
-// @Description Change the password of the authenticated user
+// @Description Change the password of the currently authenticated user
 // @Tags users
 // @Accept json
 // @Produce json
@@ -148,8 +148,9 @@ type ChangePasswordInput struct {
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
 // @Security ApiKeyAuth
-// @Router /users/change-password [post]
+// @Router /users/me/password [put]
 func (h *Handler) ChangePassword(c *gin.Context) {
 	var input ChangePasswordInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -187,7 +188,8 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} models.User
-// @Failure 401 {object} ErrorResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /users/me [get]
 func (h *Handler) GetCurrentUser(c *gin.Context) {
@@ -211,7 +213,7 @@ func (h *Handler) GetCurrentUser(c *gin.Context) {
 	h.respondWithSuccess(c, http.StatusOK, user)
 }
 
-// @Summary Update current user
+// @Summary Update current user profile
 // @Description Update the profile of the currently authenticated user
 // @Tags users
 // @Accept json
@@ -219,7 +221,7 @@ func (h *Handler) GetCurrentUser(c *gin.Context) {
 // @Param user body UpdateUserRequest true "User information"
 // @Success 200 {object} models.User
 // @Failure 400 {object} ErrorResponse
-// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /users/me [put]
 func (h *Handler) UpdateUser(c *gin.Context) {

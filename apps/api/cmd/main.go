@@ -1,12 +1,11 @@
 package main
 
 import (
-	"log"
 	"os"
-
 	"talkify/apps/api/internal/config"
 	"talkify/apps/api/internal/encryption"
 	"talkify/apps/api/internal/handlers"
+	"talkify/apps/api/internal/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
@@ -35,33 +34,54 @@ import (
 // @securityDefinitions.apikey ApiKeyAuth
 // @in header
 // @name X-User-ID
+
 func main() {
+	// Initialize logger
+	logger.InitLogger(true) // true for development mode
+
 	// Initialize configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		logger.Fatal("Failed to load config", err)
 	}
 
 	// Initialize database
 	db, err := sqlx.Connect("postgres", cfg.Database.DSN())
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		logger.Fatal("Failed to connect to database", err, map[string]interface{}{
+			"dsn": cfg.Database.DSN(),
+		})
 	}
 	defer db.Close()
+
+	logger.Info("Successfully connected to database", map[string]interface{}{
+		"host": cfg.Database.Host,
+		"port": cfg.Database.Port,
+		"name": cfg.Database.DBName,
+	})
 
 	// Initialize encryption manager
 	keyManager, err := encryption.NewKeyManager(cfg.Encryption.KeyFile)
 	if err != nil {
-		log.Fatalf("Failed to initialize key manager: %v", err)
+		logger.Fatal("Failed to initialize key manager", err, map[string]interface{}{
+			"keyFile": cfg.Encryption.KeyFile,
+		})
 	}
 
 	encryptor, err := encryption.NewManager(keyManager.GetKey())
 	if err != nil {
-		log.Fatalf("Failed to initialize encryption manager: %v", err)
+		logger.Fatal("Failed to initialize encryption manager", err)
 	}
 
+	logger.Info("Successfully initialized encryption manager")
+
 	// Initialize Gin router
-	r := gin.Default()
+	gin.SetMode(gin.ReleaseMode)
+	r := gin.New() // Use New() instead of Default() to avoid using the default logger
+
+	// Use our custom logger
+	r.Use(logger.RequestLogger())
+	r.Use(gin.Recovery()) // Keep the recovery middleware
 
 	// Initialize handlers
 	h := handlers.NewHandler(db, encryptor)
@@ -84,8 +104,14 @@ func main() {
 		port = "8080"
 	}
 
-	log.Printf("Server starting on port %s", port)
+	logger.Info("Server starting", map[string]interface{}{
+		"port": port,
+		"mode": gin.Mode(),
+	})
+
 	if err := r.Run(":" + port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+		logger.Fatal("Failed to start server", err, map[string]interface{}{
+			"port": port,
+		})
 	}
 }
