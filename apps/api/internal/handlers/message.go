@@ -73,7 +73,7 @@ func (h *Handler) CreateMessage(c *gin.Context) {
 		return
 	}
 
-	messageService := models.NewMessageService(h.db)
+	messageService := models.NewMessageService(h.db, h.encryptor)
 	message := &models.Message{
 		ConversationID:    req.ConversationID,
 		GroupID:           req.GroupID,
@@ -118,7 +118,7 @@ func (h *Handler) GetConversationMessages(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 
-	messageService := models.NewMessageService(h.db)
+	messageService := models.NewMessageService(h.db, h.encryptor)
 	messages, err := messageService.GetConversationMessages(conversationID, limit, offset)
 	if err != nil {
 		h.respondWithError(c, http.StatusInternalServerError, "Failed to get messages")
@@ -151,7 +151,7 @@ func (h *Handler) GetGroupMessages(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 
-	messageService := models.NewMessageService(h.db)
+	messageService := models.NewMessageService(h.db, h.encryptor)
 	messages, err := messageService.GetGroupMessages(groupID, limit, offset)
 	if err != nil {
 		h.respondWithError(c, http.StatusInternalServerError, "Failed to get messages")
@@ -192,7 +192,7 @@ func (h *Handler) UpdateMessage(c *gin.Context) {
 		return
 	}
 
-	messageService := models.NewMessageService(h.db)
+	messageService := models.NewMessageService(h.db, h.encryptor)
 	message := &models.Message{
 		Base:     models.Base{ID: messageID},
 		SenderID: userID,
@@ -231,7 +231,7 @@ func (h *Handler) DeleteMessage(c *gin.Context) {
 		return
 	}
 
-	messageService := models.NewMessageService(h.db)
+	messageService := models.NewMessageService(h.db, h.encryptor)
 	if err := messageService.Delete(messageID, userID); err != nil {
 		h.respondWithError(c, http.StatusInternalServerError, "Failed to delete message")
 		return
@@ -271,7 +271,7 @@ func (h *Handler) UpdateMessageStatus(c *gin.Context) {
 		return
 	}
 
-	messageService := models.NewMessageService(h.db)
+	messageService := models.NewMessageService(h.db, h.encryptor)
 	if err := messageService.UpdateMessageStatus(messageID, userID, status); err != nil {
 		h.respondWithError(c, http.StatusInternalServerError, "Failed to update message status")
 		return

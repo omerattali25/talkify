@@ -1,21 +1,26 @@
 package models
 
 import (
+	"talkify/apps/api/internal/encryption"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
 
+// MessageType represents the type of message
 type MessageType string
 
 const (
-	MessageTypeText     MessageType = "text"
-	MessageTypeImage    MessageType = "image"
-	MessageTypeVideo    MessageType = "video"
-	MessageTypeAudio    MessageType = "audio"
-	MessageTypeFile     MessageType = "file"
-	MessageTypeLocation MessageType = "location"
+	TextMessage     MessageType = "text"
+	ImageMessage    MessageType = "image"
+	VideoMessage    MessageType = "video"
+	AudioMessage    MessageType = "audio"
+	FileMessage     MessageType = "file"
+	LocationMessage MessageType = "location"
 )
 
+// Message represents a chat message
 type Message struct {
 	Base
 	ConversationID    *uuid.UUID  `db:"conversation_id" json:"conversation_id,omitempty"`
@@ -34,115 +39,233 @@ type Message struct {
 	ReplyTo           *Message    `db:"-" json:"reply_to,omitempty"`
 }
 
+// MessageService handles message-related database operations
 type MessageService struct {
-	db *sqlx.DB
+	db        *sqlx.DB
+	encryptor *encryption.Manager
 }
 
-func NewMessageService(db *sqlx.DB) *MessageService {
-	return &MessageService{db: db}
+// NewMessageService creates a new message service
+func NewMessageService(db *sqlx.DB, encryptor *encryption.Manager) *MessageService {
+	return &MessageService{
+		db:        db,
+		encryptor: encryptor,
+	}
 }
 
-func (s *MessageService) Create(msg *Message) error {
+// Create creates a new message
+func (s *MessageService) Create(message *Message) error {
+	// Encrypt message content if encryption is enabled
+	if s.encryptor != nil {
+		encryptedContent, err := s.encryptor.EncryptString(message.Content)
+		if err != nil {
+			return err
+		}
+		message.Content = encryptedContent
+	}
+
 	query := `
 		INSERT INTO messages (
 			conversation_id, group_id, sender_id, reply_to_id,
 			content, message_type, media_url, media_thumbnail_url,
-			media_size, media_duration
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			media_size, media_duration, is_edited, is_deleted
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING id, created_at, updated_at`
 
-	return s.db.QueryRowx(query,
-		msg.ConversationID,
-		msg.GroupID,
-		msg.SenderID,
-		msg.ReplyToID,
-		msg.Content,
-		msg.MessageType,
-		msg.MediaURL,
-		msg.MediaThumbnailURL,
-		msg.MediaSize,
-		msg.MediaDuration,
-	).StructScan(msg)
+	return s.db.QueryRowx(
+		query,
+		message.ConversationID,
+		message.GroupID,
+		message.SenderID,
+		message.ReplyToID,
+		message.Content,
+		message.MessageType,
+		message.MediaURL,
+		message.MediaThumbnailURL,
+		message.MediaSize,
+		message.MediaDuration,
+		message.IsEdited,
+		message.IsDeleted,
+	).StructScan(message)
 }
 
+// GetByID retrieves a message by ID
 func (s *MessageService) GetByID(id uuid.UUID) (*Message, error) {
-	msg := &Message{}
-	err := s.db.Get(msg, `
-		SELECT m.*, u.username, u.avatar_url
+	message := &Message{}
+	err := s.db.Get(message, `
+		SELECT m.*, u.username as "sender.username", u.avatar_url as "sender.avatar_url"
 		FROM messages m
 		JOIN users u ON u.id = m.sender_id
 		WHERE m.id = $1 AND NOT m.is_deleted
 	`, id)
+
 	if err != nil {
 		return nil, err
 	}
 
-	if msg.ReplyToID != nil {
+	// Decrypt message content if encryption is enabled
+	if s.encryptor != nil {
+		content, err := s.encryptor.DecryptString(message.Content)
+		if err != nil {
+			return nil, err
+		}
+		message.Content = content
+	}
+
+	if message.ReplyToID != nil {
 		replyTo := &Message{}
 		err = s.db.Get(replyTo, `
-			SELECT m.*, u.username, u.avatar_url
+			SELECT m.*, u.username as "sender.username", u.avatar_url as "sender.avatar_url"
 			FROM messages m
 			JOIN users u ON u.id = m.sender_id
 			WHERE m.id = $1
-		`, msg.ReplyToID)
+		`, message.ReplyToID)
 		if err == nil {
-			msg.ReplyTo = replyTo
+			message.ReplyTo = replyTo
 		}
 	}
 
-	return msg, nil
+	return message, nil
 }
 
+// GetConversationMessages retrieves messages for a specific conversation
 func (s *MessageService) GetConversationMessages(conversationID uuid.UUID, limit, offset int) ([]Message, error) {
 	messages := []Message{}
 	err := s.db.Select(&messages, `
-		SELECT m.*, u.username, u.avatar_url
+		SELECT m.*, u.username as "sender.username", u.avatar_url as "sender.avatar_url"
 		FROM messages m
 		JOIN users u ON u.id = m.sender_id
 		WHERE m.conversation_id = $1 AND NOT m.is_deleted
 		ORDER BY m.created_at DESC
 		LIMIT $2 OFFSET $3
 	`, conversationID, limit, offset)
-	return messages, err
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Decrypt messages if encryption is enabled
+	if s.encryptor != nil {
+		for i := range messages {
+			content, err := s.encryptor.DecryptString(messages[i].Content)
+			if err != nil {
+				return nil, err
+			}
+			messages[i].Content = content
+		}
+	}
+
+	return messages, nil
 }
 
+// GetGroupMessages retrieves messages for a specific group
 func (s *MessageService) GetGroupMessages(groupID uuid.UUID, limit, offset int) ([]Message, error) {
 	messages := []Message{}
 	err := s.db.Select(&messages, `
-		SELECT m.*, u.username, u.avatar_url
+		SELECT m.*, u.username as "sender.username", u.avatar_url as "sender.avatar_url"
 		FROM messages m
 		JOIN users u ON u.id = m.sender_id
 		WHERE m.group_id = $1 AND NOT m.is_deleted
 		ORDER BY m.created_at DESC
 		LIMIT $2 OFFSET $3
 	`, groupID, limit, offset)
-	return messages, err
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Decrypt messages if encryption is enabled
+	if s.encryptor != nil {
+		for i := range messages {
+			content, err := s.encryptor.DecryptString(messages[i].Content)
+			if err != nil {
+				return nil, err
+			}
+			messages[i].Content = content
+		}
+	}
+
+	return messages, nil
 }
 
-func (s *MessageService) Update(msg *Message) error {
-	_, err := s.db.Exec(`
+// Update updates a message
+func (s *MessageService) Update(message *Message) error {
+	// Encrypt message content if encryption is enabled
+	if s.encryptor != nil {
+		encryptedContent, err := s.encryptor.EncryptString(message.Content)
+		if err != nil {
+			return err
+		}
+		message.Content = encryptedContent
+	}
+
+	result, err := s.db.Exec(`
 		UPDATE messages
-		SET content = $1, is_edited = true
+		SET content = $1, is_edited = true, updated_at = $2
+		WHERE id = $3 AND sender_id = $4 AND NOT is_deleted
+	`, message.Content, time.Now(), message.ID, message.SenderID)
+
+	if err != nil {
+		return err
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rows == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+// Delete soft deletes a message
+func (s *MessageService) Delete(messageID, userID uuid.UUID) error {
+	result, err := s.db.Exec(`
+		UPDATE messages
+		SET is_deleted = true, updated_at = $1
 		WHERE id = $2 AND sender_id = $3 AND NOT is_deleted
-	`, msg.Content, msg.ID, msg.SenderID)
-	return err
+	`, time.Now(), messageID, userID)
+
+	if err != nil {
+		return err
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rows == 0 {
+		return ErrNotFound
+	}
+
+	return nil
 }
 
-func (s *MessageService) Delete(id, userID uuid.UUID) error {
-	_, err := s.db.Exec(`
-		UPDATE messages
-		SET is_deleted = true
-		WHERE id = $1 AND sender_id = $2
-	`, id, userID)
-	return err
-}
-
+// UpdateMessageStatus updates the delivery/read status of a message
 func (s *MessageService) UpdateMessageStatus(messageID, userID uuid.UUID, status string) error {
-	_, err := s.db.Exec(`
+	result, err := s.db.Exec(`
 		INSERT INTO message_status (message_id, user_id, status)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (message_id, user_id) DO UPDATE
 		SET status = EXCLUDED.status, updated_at = CURRENT_TIMESTAMP
 	`, messageID, userID, status)
-	return err
+
+	if err != nil {
+		return err
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rows == 0 {
+		return ErrNotFound
+	}
+
+	return nil
 }

@@ -88,6 +88,11 @@ DB_USER=talkify
 DB_PASSWORD=your_secure_password
 DB_NAME=talkify
 DB_SSL_MODE=disable
+
+# New encryption variables
+ENCRYPTION_KEY_DIR=./data     # Directory for key storage
+TLS_CERT_FILE=./certs/cert.pem    # TLS certificate
+TLS_KEY_FILE=./certs/key.pem      # TLS private key
 ```
 
 3. Start the database using Docker Compose:
@@ -153,13 +158,51 @@ The application supports various message types:
 - `file`: File attachments
 - `location`: Location sharing
 
+## Security Features
+
+### Data Encryption
+
+Talkify implements end-to-end encryption for sensitive data using AES-256-GCM:
+
+- **Message Encryption**: All messages are encrypted before being stored in the database
+- **Password Protection**: User passwords are hashed and encrypted
+- **Key Management**: 
+  - Automatic key generation and rotation
+  - Secure key storage in isolated file system
+  - Support for key backup and recovery
+- **Transport Security**: All API endpoints use HTTPS
+- **Database Encryption**:
+  - Sensitive fields are encrypted at rest
+  - Each message has its own encryption context
+  - Support for message forward secrecy
+
+### Security Best Practices
+
+- **Key Rotation**: Regular encryption key rotation
+- **Secure Storage**: 
+  - Keys stored in secure, isolated location
+  - Support for hardware security modules (HSM)
+- **Access Control**:
+  - Role-based access control
+  - API authentication required
+  - Rate limiting on sensitive endpoints
+- **Audit Logging**:
+  - All security events are logged
+  - Key usage tracking
+  - Failed decryption attempts monitored
+
 ## Security Considerations
 
-- All passwords should be properly hashed before storage
+- All sensitive data is encrypted at rest using AES-256-GCM
+- Encryption keys are automatically rotated on a regular basis
 - Use environment variables for sensitive configuration
 - Implement rate limiting for API endpoints
 - Regular security audits recommended
 - Keep dependencies updated
+- Monitor encryption key usage and access
+- Implement proper backup procedures for encryption keys
+- Use secure protocols (HTTPS) for all API communications
+- Regular penetration testing recommended
 
 ## Contributing
 

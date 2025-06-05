@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"talkify/apps/api/internal/encryption"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
@@ -12,15 +13,19 @@ type ErrorResponse struct {
 }
 
 type Handler struct {
-	db *sqlx.DB
+	db        *sqlx.DB
+	encryptor *encryption.Manager
 }
 
-func NewHandler(db *sqlx.DB) *Handler {
-	return &Handler{db: db}
+func NewHandler(db *sqlx.DB, encryptor *encryption.Manager) *Handler {
+	return &Handler{
+		db:        db,
+		encryptor: encryptor,
+	}
 }
 
 func (h *Handler) respondWithError(c *gin.Context, code int, message string) {
-	c.JSON(code, ErrorResponse{Error: message})
+	c.JSON(code, gin.H{"error": message})
 }
 
 func (h *Handler) respondWithSuccess(c *gin.Context, code int, data interface{}) {

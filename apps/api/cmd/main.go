@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"talkify/apps/api/internal/config"
+	"talkify/apps/api/internal/encryption"
 	"talkify/apps/api/internal/handlers"
 
 	"github.com/gin-gonic/gin"
@@ -35,21 +36,35 @@ import (
 // @in header
 // @name X-User-ID
 func main() {
-	// Initialize database configuration
-	dbConfig := config.NewDatabaseConfig()
+	// Initialize configuration
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
 
-	// Connect to the database
-	db, err := sqlx.Connect("postgres", dbConfig.DSN())
+	// Initialize database
+	db, err := sqlx.Connect("postgres", cfg.Database.DSN())
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer db.Close()
 
+	// Initialize encryption manager
+	keyManager, err := encryption.NewKeyManager(cfg.Encryption.KeyFile)
+	if err != nil {
+		log.Fatalf("Failed to initialize key manager: %v", err)
+	}
+
+	encryptor, err := encryption.NewManager(keyManager.GetKey())
+	if err != nil {
+		log.Fatalf("Failed to initialize encryption manager: %v", err)
+	}
+
 	// Initialize Gin router
 	r := gin.Default()
 
 	// Initialize handlers
-	h := handlers.NewHandler(db)
+	h := handlers.NewHandler(db, encryptor)
 
 	// API routes
 	api := r.Group("/api")
