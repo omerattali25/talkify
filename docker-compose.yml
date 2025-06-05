@@ -1,0 +1,29 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:16
+    container_name: talkify_db
+    environment:
+      POSTGRES_USER: talkify_user
+      POSTGRES_PASSWORD: talkify_password
+      POSTGRES_DB: talkify_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: talkify_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@talkify.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+volumes:
+  postgres_data: 
