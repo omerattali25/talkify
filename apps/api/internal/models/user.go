@@ -12,7 +12,7 @@ import (
 )
 
 type User struct {
-	Base
+	ID           uuid.UUID  `db:"id" json:"id"`
 	Username     string     `db:"username" json:"username"`
 	Email        string     `db:"email" json:"email"`
 	Phone        string     `db:"phone" json:"phone"`
@@ -21,6 +21,8 @@ type User struct {
 	LastSeen     *time.Time `db:"last_seen" json:"last_seen,omitempty"`
 	IsOnline     bool       `db:"is_online" json:"is_online"`
 	IsActive     bool       `db:"is_active" json:"is_active"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 type UserService struct {
@@ -46,18 +48,18 @@ func (s *UserService) Create(input *CreateUserInput) (*User, error) {
 	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to hash password: %v", err)
 	}
 
 	// Encrypt sensitive data
 	encryptedEmail, err := s.encryptor.EncryptString(input.Email)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to encrypt email: %v", err)
 	}
 
 	encryptedPhone, err := s.encryptor.EncryptString(input.Phone)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to encrypt phone: %v", err)
 	}
 
 	user := &User{
@@ -66,11 +68,12 @@ func (s *UserService) Create(input *CreateUserInput) (*User, error) {
 		Phone:        encryptedPhone,
 		PasswordHash: string(hashedPassword),
 		IsActive:     true,
+		Status:       "Hey, I'm using Talkify!", // Default status
 	}
 
 	query := `
-		INSERT INTO users (username, email, phone, password_hash, is_active)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO users (username, email, phone, password_hash, is_active, status)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, created_at, updated_at`
 
 	err = s.db.QueryRowx(query,
@@ -79,10 +82,11 @@ func (s *UserService) Create(input *CreateUserInput) (*User, error) {
 		user.Phone,
 		user.PasswordHash,
 		user.IsActive,
-	).StructScan(user)
+		user.Status,
+	).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt)
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create user: %v", err)
 	}
 
 	// Decrypt sensitive data for response
@@ -105,16 +109,12 @@ func (s *UserService) Login(input *LoginInput) (*User, error) {
 	`, input.Username)
 
 	if err != nil {
-		if err.Error() == "sql: no rows in result set" {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("database error: %v", err)
+		return nil, ErrNotFound
 	}
 
 	// Check password
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password))
 	if err != nil {
-		fmt.Printf("Password comparison failed: %v\nHash: %s\nInput: %s\n", err, user.PasswordHash, input.Password)
 		return nil, ErrUnauthorized
 	}
 
@@ -130,7 +130,11 @@ func (s *UserService) Login(input *LoginInput) (*User, error) {
 		return nil, fmt.Errorf("failed to decrypt phone: %v", decryptErr)
 	}
 
-	// Update last seen
+	// Update last seen and online status
+	now := time.Now()
+	user.LastSeen = &now
+	user.IsOnline = true
+
 	_, err = s.db.Exec(`
 		UPDATE users 
 		SET last_seen = CURRENT_TIMESTAMP, is_online = true 

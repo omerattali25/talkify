@@ -44,13 +44,15 @@ class APIClient {
     // Add response interceptor for handling auth errors
     this.client.interceptors.response.use(
       (response) => response,
-      (error: AxiosError) => {
+      (error: AxiosError<APIError>) => {
         if (error.response?.status === 401) {
           // Clear auth data and redirect to login
           localStorage.removeItem('token');
           window.location.href = '/login';
         }
-        return Promise.reject(error);
+        // Extract error message from response
+        const message = error.response?.data?.error || error.message;
+        return Promise.reject(new Error(message));
       }
     );
   }
@@ -62,13 +64,23 @@ class APIClient {
     return APIClient.instance;
   }
 
+  private handleError(error: unknown): never {
+    if (error instanceof AxiosError) {
+      const message = error.response?.data?.error || error.message;
+      throw new Error(message);
+    }
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('An unexpected error occurred');
+  }
+
   // Auth endpoints
   async login(input: LoginInput): Promise<AuthResponse> {
     try {
       const { data } = await this.client.post<AuthResponse>('auth/login', input);
-      if (data.token) {
-        localStorage.setItem('token', data.token);
-        this.client.defaults.headers.common['Authorization'] = `Bearer ${data.token}`;
+      if (!data.token) {
+        throw new Error('No token received from server');
       }
       return data;
     } catch (error) {
@@ -79,7 +91,9 @@ class APIClient {
   async register(input: RegisterInput): Promise<AuthResponse> {
     try {
       const { data } = await this.client.post<AuthResponse>('auth/register', input);
-      localStorage.setItem('token', data.token);
+      if (!data.token) {
+        throw new Error('No token received from server');
+      }
       return data;
     } catch (error) {
       throw this.handleError(error);
@@ -87,7 +101,11 @@ class APIClient {
   }
 
   async logout(): Promise<void> {
-    localStorage.removeItem('token');
+    try {
+      await this.client.post('auth/logout');
+    } catch (error) {
+      throw this.handleError(error);
+    }
   }
 
   async getCurrentUser(): Promise<User> {
@@ -232,15 +250,21 @@ class APIClient {
     }
   }
 
-  private handleError(error: unknown): Error {
-    if (error instanceof AxiosError) {
-      if (error.response?.data) {
-        const apiError = error.response.data as APIError;
-        return new Error(apiError.error || 'An error occurred');
-      }
-      return new Error(error.message || 'Network error occurred');
+  // Message reaction endpoints
+  async addMessageReaction(messageId: string, emoji: string): Promise<void> {
+    try {
+      await this.client.post(`messages/${messageId}/reactions`, { emoji });
+    } catch (error) {
+      throw this.handleError(error);
     }
-    return error instanceof Error ? error : new Error('An unknown error occurred');
+  }
+
+  async removeMessageReaction(messageId: string, emoji: string): Promise<void> {
+    try {
+      await this.client.delete(`messages/${messageId}/reactions/${encodeURIComponent(emoji)}`);
+    } catch (error) {
+      throw this.handleError(error);
+    }
   }
 }
 

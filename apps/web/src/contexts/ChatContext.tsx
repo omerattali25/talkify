@@ -23,6 +23,15 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   const queryClient = useQueryClient();
   const [typingUsers, setTypingUsers] = useState<Record<string, Set<string>>>({});
 
+  // Fetch current user
+  const { data: currentUser, isLoading: isLoadingUser, error: userError } = useQuery({
+    queryKey: ['currentUser'],
+    queryFn: () => {
+      console.log('ChatContext: Fetching current user');
+      return api.getCurrentUser();
+    },
+  });
+
   // Handle WebSocket connection/disconnection
   useEffect(() => {
     console.log('ChatContext: Setting up WebSocket cleanup');
@@ -38,11 +47,28 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     const unsubscribe = chatWs.subscribe((event) => {
       console.log('ChatContext: Received WebSocket event', event);
       if (event.type === 'new_message') {
-        console.log('ChatContext: Invalidating queries for new message');
-        queryClient.invalidateQueries({ queryKey: ['messages', event.payload.conversation_id] });
-        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        // Update messages cache
+        queryClient.setQueryData(['messages', event.payload.conversation_id], (oldMessages: Message[] | undefined) => {
+          if (!oldMessages) return [event.payload];
+          return [...oldMessages, event.payload];
+        });
+
+        // Update conversations cache
+        queryClient.setQueryData(['conversations'], (oldConversations: Conversation[] | undefined) => {
+          if (!oldConversations) return oldConversations;
+          return oldConversations.map(conv => {
+            if (conv.id === event.payload.conversation_id) {
+              return {
+                ...conv,
+                last_message: event.payload,
+                unread_count: conv.unread_count + (event.payload.sender_id !== currentUser?.id ? 1 : 0)
+              };
+            }
+            return conv;
+          });
+        });
       } else if (event.type === 'message_updated') {
-        // Update message read status in cache
+        // Update message in cache
         queryClient.setQueryData(['messages', event.payload.conversation_id], (oldMessages: Message[] | undefined) => {
           if (!oldMessages) return oldMessages;
           return oldMessages.map(msg => 
@@ -121,16 +147,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       console.log('ChatContext: Cleaning up WebSocket event subscription');
       unsubscribe();
     };
-  }, [queryClient]);
-
-  // Fetch current user
-  const { data: currentUser, isLoading: isLoadingUser, error: userError } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => {
-      console.log('ChatContext: Fetching current user');
-      return api.getCurrentUser();
-    },
-  });
+  }, [queryClient, currentUser?.id]);
 
   // Fetch conversations
   const { data: conversations = [], isLoading: isLoadingConversations, error: conversationsError } = useQuery<Conversation[], Error>({

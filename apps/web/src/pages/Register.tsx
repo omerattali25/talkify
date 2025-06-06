@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
+import { toast } from 'sonner';
 
 export const Register = () => {
   const { register, isLoading } = useAuth();
@@ -25,13 +26,32 @@ export const Register = () => {
     setError('');
 
     // Basic validation
+    if (!formData.username.trim() || !formData.email.trim() || !formData.phone.trim() || !formData.password.trim()) {
+      setError('All fields are required');
+      return;
+    }
+
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
       return;
     }
 
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters long');
+    if (formData.password.length < 8) {
+      setError('Password must be at least 8 characters long');
+      return;
+    }
+
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      setError('Please enter a valid email address');
+      return;
+    }
+
+    // Phone validation (basic)
+    const phoneRegex = /^\+?[\d\s-]{10,}$/;
+    if (!phoneRegex.test(formData.phone)) {
+      setError('Please enter a valid phone number');
       return;
     }
 
@@ -44,8 +64,13 @@ export const Register = () => {
       });
       // Navigation is handled by the AuthContext
     } catch (error) {
-      // Error is handled by the AuthContext
       console.error('Registration error:', error);
+      if (error instanceof Error) {
+        setError(error.message);
+      } else {
+        setError('An unexpected error occurred');
+      }
+      toast.error(error instanceof Error ? error.message : 'Failed to register');
     }
   };
 
@@ -146,7 +171,18 @@ export const Register = () => {
             </div>
 
             {error && (
-              <p className="text-sm text-destructive">{error}</p>
+              <div className="rounded-md bg-destructive/15 p-3">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-destructive" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-destructive">{error}</p>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
 

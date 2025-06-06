@@ -18,35 +18,58 @@ func (h *Handler) RegisterAuthRoutes(r *gin.RouterGroup) {
 func (h *Handler) RegisterUser(c *gin.Context) {
 	var input models.CreateUserInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		h.respondWithError(c, http.StatusBadRequest, err.Error())
+		h.respondWithError(c, http.StatusBadRequest, fmt.Sprintf("Invalid input: %v", err))
 		return
 	}
 
 	userService := models.NewUserService(h.db, h.encryptor)
-	user, err := userService.Create(&input)
-	if err != nil {
-		h.respondWithError(c, http.StatusInternalServerError, "Failed to create user")
+
+	// Check if username already exists
+	existingUser, err := userService.GetByUsername(input.Username)
+	if err == nil && existingUser != nil {
+		h.respondWithError(c, http.StatusConflict, "Username already exists")
 		return
 	}
 
-	h.respondWithSuccess(c, http.StatusCreated, user)
+	// Create user
+	user, err := userService.Create(&input)
+	if err != nil {
+		h.respondWithError(c, http.StatusInternalServerError, fmt.Sprintf("Failed to create user: %v", err))
+		return
+	}
+
+	// Generate token
+	token, err := h.tokenManager.GenerateToken(user.ID)
+	if err != nil {
+		h.respondWithError(c, http.StatusInternalServerError, "Failed to generate token")
+		return
+	}
+
+	h.respondWithSuccess(c, http.StatusCreated, gin.H{
+		"user":  user,
+		"token": token,
+	})
 }
 
 func (h *Handler) LoginUser(c *gin.Context) {
 	var input models.LoginInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		h.respondWithError(c, http.StatusBadRequest, err.Error())
+		h.respondWithError(c, http.StatusBadRequest, fmt.Sprintf("Invalid input: %v", err))
 		return
 	}
 
 	userService := models.NewUserService(h.db, h.encryptor)
 	user, err := userService.Login(&input)
 	if err != nil {
-		if err == models.ErrNotFound || err == models.ErrUnauthorized {
+		if err == models.ErrNotFound {
+			h.respondWithError(c, http.StatusUnauthorized, "User not found")
+			return
+		}
+		if err == models.ErrUnauthorized {
 			h.respondWithError(c, http.StatusUnauthorized, "Invalid credentials")
 			return
 		}
-		h.respondWithError(c, http.StatusInternalServerError, "Login failed")
+		h.respondWithError(c, http.StatusInternalServerError, fmt.Sprintf("Login failed: %v", err))
 		return
 	}
 

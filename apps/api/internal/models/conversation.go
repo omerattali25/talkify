@@ -252,18 +252,16 @@ func (s *ConversationService) Create(creatorID uuid.UUID, input *CreateConversat
 	// Create User objects from the query results
 	for i := range participants {
 		participants[i].User = &User{
-			Base: Base{
-				ID:        participants[i].UserID,
-				CreatedAt: participants[i].UserCreatedAt,
-				UpdatedAt: participants[i].UserUpdatedAt,
-			},
-			Username: participants[i].UserUsername,
-			Email:    participants[i].UserEmail,
-			Phone:    participants[i].UserPhone,
-			Status:   participants[i].UserStatus,
-			LastSeen: participants[i].UserLastSeen,
-			IsOnline: participants[i].UserIsOnline,
-			IsActive: participants[i].UserIsActive,
+			ID:        participants[i].UserID,
+			CreatedAt: participants[i].UserCreatedAt,
+			UpdatedAt: participants[i].UserUpdatedAt,
+			Username:  participants[i].UserUsername,
+			Email:     participants[i].UserEmail,
+			Phone:     participants[i].UserPhone,
+			Status:    participants[i].UserStatus,
+			LastSeen:  participants[i].UserLastSeen,
+			IsOnline:  participants[i].UserIsOnline,
+			IsActive:  participants[i].UserIsActive,
 		}
 	}
 	conv.Participants = participants
@@ -321,18 +319,16 @@ func (s *ConversationService) GetByID(id uuid.UUID) (*Conversation, error) {
 	// Create User objects from the query results
 	for i := range participants {
 		participants[i].User = &User{
-			Base: Base{
-				ID:        participants[i].UserID,
-				CreatedAt: participants[i].UserCreatedAt,
-				UpdatedAt: participants[i].UserUpdatedAt,
-			},
-			Username: participants[i].UserUsername,
-			Email:    participants[i].UserEmail,
-			Phone:    participants[i].UserPhone,
-			Status:   participants[i].UserStatus,
-			LastSeen: participants[i].UserLastSeen,
-			IsOnline: participants[i].UserIsOnline,
-			IsActive: participants[i].UserIsActive,
+			ID:        participants[i].UserID,
+			CreatedAt: participants[i].UserCreatedAt,
+			UpdatedAt: participants[i].UserUpdatedAt,
+			Username:  participants[i].UserUsername,
+			Email:     participants[i].UserEmail,
+			Phone:     participants[i].UserPhone,
+			Status:    participants[i].UserStatus,
+			LastSeen:  participants[i].UserLastSeen,
+			IsOnline:  participants[i].UserIsOnline,
+			IsActive:  participants[i].UserIsActive,
 		}
 	}
 	conv.Participants = participants
@@ -429,18 +425,16 @@ func (s *ConversationService) GetUserConversations(userID uuid.UUID) ([]Conversa
 		// Create User objects from the query results
 		for j := range participants {
 			participants[j].User = &User{
-				Base: Base{
-					ID:        participants[j].UserID,
-					CreatedAt: participants[j].UserCreatedAt,
-					UpdatedAt: participants[j].UserUpdatedAt,
-				},
-				Username: participants[j].UserUsername,
-				Email:    participants[j].UserEmail,
-				Phone:    participants[j].UserPhone,
-				Status:   participants[j].UserStatus,
-				LastSeen: participants[j].UserLastSeen,
-				IsOnline: participants[j].UserIsOnline,
-				IsActive: participants[j].UserIsActive,
+				ID:        participants[j].UserID,
+				CreatedAt: participants[j].UserCreatedAt,
+				UpdatedAt: participants[j].UserUpdatedAt,
+				Username:  participants[j].UserUsername,
+				Email:     participants[j].UserEmail,
+				Phone:     participants[j].UserPhone,
+				Status:    participants[j].UserStatus,
+				LastSeen:  participants[j].UserLastSeen,
+				IsOnline:  participants[j].UserIsOnline,
+				IsActive:  participants[j].UserIsActive,
 			}
 		}
 		conversations[i].Participants = participants
@@ -450,10 +444,24 @@ func (s *ConversationService) GetUserConversations(userID uuid.UUID) ([]Conversa
 		err = s.db.Get(&lastMessage, `
 			SELECT 
 				m.*,
-				u.username as sender_username
+				u.username as sender_username,
+				ARRAY_REMOVE(ARRAY_AGG(DISTINCT ms.user_id), NULL)::TEXT[] as read_by,
+				COALESCE(
+					json_agg(DISTINCT jsonb_build_object(
+						'id', mr.id,
+						'message_id', mr.message_id,
+						'user_id', mr.user_id,
+						'emoji', mr.emoji,
+						'created_at', mr.created_at
+					)) FILTER (WHERE mr.id IS NOT NULL),
+					'[]'
+				)::jsonb as reactions
 			FROM messages m
 			JOIN users u ON u.id = m.sender_id AND u.is_active = true
+			LEFT JOIN message_status ms ON m.id = ms.message_id AND ms.status = 'read'
+			LEFT JOIN message_reactions mr ON m.id = mr.message_id
 			WHERE m.conversation_id = $1
+			GROUP BY m.id, u.username
 			ORDER BY m.created_at DESC
 			LIMIT 1
 		`, conversations[i].ID)

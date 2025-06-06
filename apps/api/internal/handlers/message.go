@@ -42,6 +42,8 @@ func (h *Handler) RegisterMessageRoutes(r *gin.RouterGroup) {
 		r.DELETE("/:id", h.DeleteMessage)
 		r.POST("/:id/status", h.UpdateMessageStatus)
 		r.POST("/status/batch", h.BatchUpdateMessageStatus)
+		r.POST("/:id/reactions", h.AddMessageReaction)
+		r.DELETE("/:id/reactions/:emoji", h.RemoveMessageReaction)
 	}
 }
 
@@ -84,7 +86,7 @@ func (h *Handler) CreateMessage(c *gin.Context) {
 	var participantRole string
 	err = h.db.Get(&participantRole, `
 		SELECT role FROM conversation_participants
-		WHERE conversation_id = $1 AND user_id = $2
+			WHERE conversation_id = $1 AND user_id = $2
 	`, req.ConversationID, senderID)
 	if err == sql.ErrNoRows {
 		h.respondWithError(c, http.StatusForbidden, "Not a participant in this conversation")
@@ -107,7 +109,7 @@ func (h *Handler) CreateMessage(c *gin.Context) {
 		SenderID:          senderID,
 		ReplyToID:         req.ReplyToID,
 		Content:           req.Content,
-		MessageType:       messageType,
+		MessageType:       string(messageType),
 		MediaURL:          req.MediaURL,
 		MediaThumbnailURL: req.MediaThumbnailURL,
 		MediaSize:         req.MediaSize,
@@ -221,7 +223,7 @@ func (h *Handler) UpdateMessage(c *gin.Context) {
 
 	messageService := models.NewMessageService(h.db, h.encryptor)
 	message := &models.Message{
-		Base:     models.Base{ID: messageID},
+		ID:       messageID,
 		SenderID: userID,
 		Content:  req.Content,
 	}
@@ -342,4 +344,88 @@ func (h *Handler) BatchUpdateMessageStatus(c *gin.Context) {
 	}
 
 	h.respondWithSuccess(c, http.StatusOK, gin.H{"message": "Message status updated successfully"})
+}
+
+// @Summary Add reaction to message
+// @Description Add an emoji reaction to a message
+// @Tags messages
+// @Accept json
+// @Produce json
+// @Param id path string true "Message ID"
+// @Param reaction body AddReactionRequest true "Reaction information"
+// @Success 201 {object} MessageReaction
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /messages/{id}/reactions [post]
+func (h *Handler) AddMessageReaction(c *gin.Context) {
+	messageID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		h.respondWithError(c, http.StatusBadRequest, "Invalid message ID")
+		return
+	}
+
+	var req struct {
+		Emoji string `json:"emoji" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.respondWithError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	userID, err := uuid.Parse(c.GetHeader("X-User-ID"))
+	if err != nil {
+		h.respondWithError(c, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	messageService := models.NewMessageService(h.db, h.encryptor)
+	err = messageService.AddReaction(messageID, userID, req.Emoji)
+	if err != nil {
+		h.respondWithError(c, http.StatusInternalServerError, "Failed to add reaction")
+		return
+	}
+
+	h.respondWithSuccess(c, http.StatusCreated, gin.H{"message": "Reaction added successfully"})
+}
+
+// @Summary Remove reaction from message
+// @Description Remove an emoji reaction from a message
+// @Tags messages
+// @Accept json
+// @Produce json
+// @Param id path string true "Message ID"
+// @Param emoji path string true "Emoji to remove"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /messages/{id}/reactions/{emoji} [delete]
+func (h *Handler) RemoveMessageReaction(c *gin.Context) {
+	messageID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		h.respondWithError(c, http.StatusBadRequest, "Invalid message ID")
+		return
+	}
+
+	emoji := c.Param("emoji")
+	if emoji == "" {
+		h.respondWithError(c, http.StatusBadRequest, "Emoji parameter is required")
+		return
+	}
+
+	userID, err := uuid.Parse(c.GetHeader("X-User-ID"))
+	if err != nil {
+		h.respondWithError(c, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	messageService := models.NewMessageService(h.db, h.encryptor)
+	err = messageService.RemoveReaction(messageID, userID, emoji)
+	if err != nil {
+		h.respondWithError(c, http.StatusInternalServerError, "Failed to remove reaction")
+		return
+	}
+
+	h.respondWithSuccess(c, http.StatusOK, gin.H{"message": "Reaction removed successfully"})
 }

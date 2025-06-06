@@ -14,8 +14,13 @@ import {
   Trash,
   Volume2,
   VolumeX,
+  X,
+  Check,
 } from 'lucide-react';
-import { useChat } from '../contexts/ChatContext';
+import { useAuth } from '../contexts/AuthContext';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '../lib/api';
+import { toast } from 'sonner';
 
 const tabs = [
   { id: 'profile', label: 'Profile', icon: User },
@@ -25,13 +30,73 @@ const tabs = [
 
 export const Settings = () => {
   const navigate = useNavigate();
-  const { currentUser } = useChat();
+  const { user: currentUser, logout } = useAuth();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('profile');
   const [isDark, setIsDark] = useState(false);
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const [isEditingUsername, setIsEditingUsername] = useState(false);
+  const [newEmail, setNewEmail] = useState(currentUser?.email || '');
+  const [newUsername, setNewUsername] = useState(currentUser?.username || '');
+  const [password, setPassword] = useState('');
+  const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
   const [notificationSettings, setNotificationSettings] = useState({
     messageNotifications: true,
     soundEnabled: true,
     emailNotifications: false,
+  });
+
+  const verifyPasswordMutation = useMutation({
+    mutationFn: async (password: string) => {
+      // We'll use changePassword with the same password to verify it
+      // This will fail if the current password is incorrect
+      try {
+        await api.changePassword(password, password);
+        return true;
+      } catch (error) {
+        throw new Error('Invalid password. Please try again.');
+      }
+    }
+  });
+
+  const updateProfileMutation = useMutation({
+    mutationFn: async (data: { email?: string; username?: string; password?: string }) => {
+      // If updating username, require password confirmation
+      if (data.username && data.username !== currentUser?.username) {
+        if (!data.password) {
+          setShowPasswordConfirm(true);
+          throw new Error('Please confirm your password to update username');
+        }
+        
+        // First verify the password
+        await verifyPasswordMutation.mutateAsync(data.password);
+      }
+
+      const response = await api.updateProfile(data);
+      
+      // If username was updated successfully
+      if (data.username && data.username !== currentUser?.username) {
+        // Clear all query cache
+        queryClient.clear();
+        // Remove auth token
+        localStorage.removeItem('token');
+        // Navigate to login
+        window.location.href = '/login'; // Use window.location.href for a full page reload
+        toast.success('Username updated successfully. Please login with your new username.');
+      } else {
+        // For other updates, just show success message
+        toast.success('Profile updated successfully');
+      }
+      
+      return response;
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to update profile');
+      // Reset the form values on error
+      setNewEmail(currentUser?.email || '');
+      setNewUsername(currentUser?.username || '');
+      setPassword('');
+    },
   });
 
   if (!currentUser) {
@@ -47,6 +112,44 @@ export const Settings = () => {
     document.documentElement.classList.toggle('dark');
   };
 
+  const handleUpdateProfile = async (field: 'email' | 'username') => {
+    try {
+      if (field === 'email' && newEmail !== currentUser?.email) {
+        await updateProfileMutation.mutateAsync({ email: newEmail });
+        setIsEditingEmail(false);
+      } else if (field === 'username' && newUsername !== currentUser?.username) {
+        await updateProfileMutation.mutateAsync({ 
+          username: newUsername,
+          password: password 
+        });
+        setIsEditingUsername(false);
+        setShowPasswordConfirm(false);
+        setPassword('');
+      }
+    } catch (error) {
+      // Error is handled in mutation's onError
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      // Clear all query cache
+      queryClient.clear();
+      // Remove auth token
+      localStorage.removeItem('token');
+      // Call logout
+      await logout();
+      // Force a full page reload to clear all state
+      window.location.href = '/login';
+    } catch (error) {
+      toast.error('Failed to logout');
+      // Still try to clear everything and redirect
+      queryClient.clear();
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+    }
+  };
+
   const renderTabContent = () => {
     switch (activeTab) {
       case 'profile':
@@ -59,12 +162,69 @@ export const Settings = () => {
                     {currentUser.username[0].toUpperCase()}
                   </span>
                 </div>
-                <button className="absolute bottom-0 right-0 rounded-full bg-primary p-2 text-primary-foreground shadow-lg">
-                  <Camera className="h-4 w-4" />
-                </button>
               </div>
-              <h3 className="font-medium">{currentUser.username}</h3>
-              <p className="text-sm text-muted-foreground">{currentUser.email}</p>
+              <div className="space-y-1">
+                {isEditingUsername ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <input
+                      type="text"
+                      value={newUsername}
+                      onChange={(e) => setNewUsername(e.target.value)}
+                      className="rounded-md border border-border bg-background px-3 py-1 text-center focus:outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="Enter username"
+                    />
+                    <button
+                      onClick={() => handleUpdateProfile('username')}
+                      className="rounded-full p-1 text-green-500 hover:bg-green-50"
+                    >
+                      <Check className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setNewUsername(currentUser.username);
+                        setIsEditingUsername(false);
+                      }}
+                      className="rounded-full p-1 text-red-500 hover:bg-red-50"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <h3 className="font-medium cursor-pointer" onClick={() => setIsEditingUsername(true)}>
+                    {currentUser.username}
+                  </h3>
+                )}
+                {isEditingEmail ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <input
+                      type="email"
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      className="rounded-md border border-border bg-background px-3 py-1 text-center focus:outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="Enter email"
+                    />
+                    <button
+                      onClick={() => handleUpdateProfile('email')}
+                      className="rounded-full p-1 text-green-500 hover:bg-green-50"
+                    >
+                      <Check className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setNewEmail(currentUser.email);
+                        setIsEditingEmail(false);
+                      }}
+                      className="rounded-full p-1 text-red-500 hover:bg-red-50"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground cursor-pointer" onClick={() => setIsEditingEmail(true)}>
+                    {currentUser.email}
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="space-y-4">
@@ -247,7 +407,7 @@ export const Settings = () => {
   };
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="min-h-screen bg-background">
       {/* Sidebar */}
       <div className="w-64 border-r border-border bg-card">
         <div className="flex items-center gap-2 border-b border-border p-4">
@@ -275,7 +435,7 @@ export const Settings = () => {
             </button>
           ))}
           <button
-            onClick={() => navigate('/login')}
+            onClick={handleLogout}
             className="flex w-full items-center gap-3 rounded-lg px-4 py-2 text-destructive transition-colors hover:bg-destructive/10"
           >
             <LogOut className="h-5 w-5" />
@@ -296,6 +456,40 @@ export const Settings = () => {
           {renderTabContent()}
         </motion.div>
       </div>
+
+      {showPasswordConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+          <div className="bg-white p-6 rounded-lg shadow-lg">
+            <h3 className="text-lg font-semibold mb-4">Confirm Password</h3>
+            <p className="mb-4">Please enter your current password to update your username</p>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 mb-4"
+              placeholder="Enter your password"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setShowPasswordConfirm(false);
+                  setPassword('');
+                }}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleUpdateProfile('username')}
+                className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90"
+                disabled={verifyPasswordMutation.isPending || updateProfileMutation.isPending}
+              >
+                {verifyPasswordMutation.isPending ? 'Verifying...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }; 

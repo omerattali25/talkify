@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -44,6 +45,12 @@ func (h *Handler) respondWithSuccess(c *gin.Context, code int, data interface{})
 
 func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Skip auth for login and register endpoints
+		if c.Request.URL.Path == "/api/auth/login" || c.Request.URL.Path == "/api/auth/register" {
+			c.Next()
+			return
+		}
+
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
 			h.respondWithError(c, http.StatusUnauthorized, "Authorization header is required")
@@ -62,7 +69,7 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 		// Validate the token
 		claims, err := h.tokenManager.ValidateToken(parts[1])
 		if err != nil {
-			h.respondWithError(c, http.StatusUnauthorized, "Invalid token")
+			h.respondWithError(c, http.StatusUnauthorized, fmt.Sprintf("Invalid token: %v", err))
 			c.Abort()
 			return
 		}
@@ -71,7 +78,18 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 		userService := models.NewUserService(h.db, h.encryptor)
 		user, err := userService.GetByID(claims.UserID)
 		if err != nil {
-			h.respondWithError(c, http.StatusUnauthorized, "Invalid user")
+			if err == models.ErrNotFound {
+				h.respondWithError(c, http.StatusUnauthorized, "User not found")
+			} else {
+				h.respondWithError(c, http.StatusInternalServerError, fmt.Sprintf("Failed to get user: %v", err))
+			}
+			c.Abort()
+			return
+		}
+
+		// Check if user is active
+		if !user.IsActive {
+			h.respondWithError(c, http.StatusForbidden, "User account is inactive")
 			c.Abort()
 			return
 		}

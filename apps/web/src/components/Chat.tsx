@@ -4,7 +4,7 @@ import { useChat } from '../contexts/ChatContext';
 import { ChatBox } from './ChatBox';
 import { NewConversation } from './NewConversation';
 import type { Conversation } from '../types/api';
-import { MessageSquare, Search, Plus } from 'lucide-react';
+import { MessageSquare, Search, Plus, Settings } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { isValidConversation } from '../lib/utils';
@@ -128,13 +128,22 @@ export const Chat = () => {
         <div className="px-6 py-4 border-b">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-gray-800">Messages</h2>
-            <button
-              onClick={() => setShowNewConversation(true)}
-              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-              title="New Chat"
-            >
-              <Plus className="w-5 h-5 text-gray-600" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate('/settings')}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                title="Settings"
+              >
+                <Settings className="w-5 h-5 text-gray-600" />
+              </button>
+              <button
+                onClick={() => setShowNewConversation(true)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                title="New Chat"
+              >
+                <Plus className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
           </div>
           <div className="relative">
             <input

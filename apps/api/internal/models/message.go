@@ -1,11 +1,13 @@
 package models
 
 import (
+	"encoding/json"
 	"talkify/apps/api/internal/encryption"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 )
 
 // MessageType represents the type of message
@@ -31,24 +33,54 @@ const (
 	StatusFailed    MessageStatus = "failed"
 )
 
+// MessageReactions is a custom type that implements sql.Scanner
+type MessageReactions []MessageReaction
+
+func (r *MessageReactions) Scan(value interface{}) error {
+	if value == nil {
+		*r = make([]MessageReaction, 0)
+		return nil
+	}
+
+	bytes, ok := value.([]byte)
+	if !ok {
+		*r = make([]MessageReaction, 0)
+		return nil
+	}
+
+	return json.Unmarshal(bytes, r)
+}
+
 // Message represents a chat message
 type Message struct {
-	Base
-	ConversationID    uuid.UUID     `db:"conversation_id" json:"conversation_id"`
-	SenderID          uuid.UUID     `db:"sender_id" json:"sender_id"`
-	ReplyToID         *uuid.UUID    `db:"reply_to_id" json:"reply_to_id,omitempty"`
-	Content           string        `db:"content" json:"content"`
-	MessageType       MessageType   `db:"message_type" json:"message_type"`
-	MediaURL          *string       `db:"media_url" json:"media_url,omitempty"`
-	MediaThumbnailURL *string       `db:"media_thumbnail_url" json:"media_thumbnail_url,omitempty"`
-	MediaSize         *int          `db:"media_size" json:"media_size,omitempty"`
-	MediaDuration     *int          `db:"media_duration" json:"media_duration,omitempty"`
-	IsEdited          bool          `db:"is_edited" json:"is_edited"`
-	IsDeleted         bool          `db:"is_deleted" json:"is_deleted"`
-	SenderUsername    string        `db:"sender_username" json:"sender_username"`
-	ReplyTo           *Message      `db:"-" json:"reply_to,omitempty"`
-	Status            MessageStatus `db:"-" json:"status"`
-	ReadBy            []uuid.UUID   `db:"-" json:"read_by,omitempty"`
+	ID                uuid.UUID        `db:"id" json:"id"`
+	ConversationID    uuid.UUID        `db:"conversation_id" json:"conversation_id"`
+	SenderID          uuid.UUID        `db:"sender_id" json:"sender_id"`
+	SenderUsername    string           `db:"sender_username" json:"sender_username"`
+	Sender            *User            `db:"sender" json:"sender,omitempty"`
+	ReplyToID         *uuid.UUID       `db:"reply_to_id" json:"reply_to_id,omitempty"`
+	Content           string           `db:"content" json:"content"`
+	MessageType       string           `db:"message_type" json:"type"`
+	MediaURL          *string          `db:"media_url" json:"media_url,omitempty"`
+	MediaThumbnailURL *string          `db:"media_thumbnail_url" json:"media_thumbnail_url,omitempty"`
+	MediaSize         *int             `db:"media_size" json:"media_size,omitempty"`
+	MediaDuration     *int             `db:"media_duration" json:"media_duration,omitempty"`
+	CreatedAt         time.Time        `db:"created_at" json:"created_at"`
+	UpdatedAt         time.Time        `db:"updated_at" json:"updated_at"`
+	ReadBy            pq.StringArray   `db:"read_by" json:"read_by"`
+	Status            *string          `db:"status" json:"status,omitempty"`
+	Reactions         MessageReactions `db:"reactions" json:"reactions,omitempty"`
+	IsEdited          bool             `db:"is_edited" json:"is_edited"`
+	IsDeleted         bool             `db:"is_deleted" json:"is_deleted"`
+	ReplyTo           *Message         `db:"-" json:"reply_to,omitempty"`
+}
+
+type MessageReaction struct {
+	ID        uuid.UUID `db:"id" json:"id"`
+	MessageID uuid.UUID `db:"message_id" json:"message_id"`
+	UserID    uuid.UUID `db:"user_id" json:"user_id"`
+	Emoji     string    `db:"emoji" json:"emoji"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
 }
 
 // MessageService handles message-related database operations
@@ -147,7 +179,7 @@ func (s *MessageService) GetByID(id uuid.UUID) (*Message, error) {
 		LIMIT 1
 	`, id)
 	if err == nil {
-		message.Status = MessageStatus(status)
+		message.Status = &status
 	}
 
 	// Get read by users
@@ -188,11 +220,26 @@ func (s *MessageService) GetByID(id uuid.UUID) (*Message, error) {
 func (s *MessageService) GetConversationMessages(conversationID uuid.UUID, limit, offset int) ([]Message, error) {
 	messages := []Message{}
 	err := s.db.Select(&messages, `
-		SELECT m.*, u.username as sender_username
+		SELECT m.*, 
+			u.username as sender_username,
+			ARRAY_REMOVE(ARRAY_AGG(DISTINCT ms.user_id), NULL)::TEXT[] as read_by,
+			COALESCE(
+				json_agg(DISTINCT jsonb_build_object(
+					'id', mr.id,
+					'message_id', mr.message_id,
+					'user_id', mr.user_id,
+					'emoji', mr.emoji,
+					'created_at', mr.created_at
+				)) FILTER (WHERE mr.id IS NOT NULL),
+				'[]'
+			)::jsonb as reactions
 		FROM messages m
-		JOIN users u ON u.id = m.sender_id
-		WHERE m.conversation_id = $1 AND NOT m.is_deleted
-		ORDER BY m.created_at DESC
+		JOIN users u ON u.id = m.sender_id AND u.is_active = true
+		LEFT JOIN message_status ms ON m.id = ms.message_id AND ms.status = 'read'
+		LEFT JOIN message_reactions mr ON m.id = mr.message_id
+		WHERE m.conversation_id = $1
+		GROUP BY m.id, u.username
+		ORDER BY m.created_at ASC
 		LIMIT $2 OFFSET $3
 	`, conversationID, limit, offset)
 
@@ -200,37 +247,13 @@ func (s *MessageService) GetConversationMessages(conversationID uuid.UUID, limit
 		return nil, err
 	}
 
-	// Get status and read_by for each message
+	// Decrypt message content
 	for i := range messages {
-		// Get latest status
-		var status string
-		err = s.db.Get(&status, `
-			SELECT status FROM message_status 
-			WHERE message_id = $1 
-			ORDER BY updated_at DESC 
-			LIMIT 1
-		`, messages[i].ID)
-		if err == nil {
-			messages[i].Status = MessageStatus(status)
-		}
-
-		// Get read by users
-		err = s.db.Select(&messages[i].ReadBy, `
-			SELECT user_id FROM message_status 
-			WHERE message_id = $1 AND status = 'read'
-		`, messages[i].ID)
+		decryptedContent, err := s.encryptor.DecryptString(messages[i].Content)
 		if err != nil {
 			return nil, err
 		}
-
-		// Decrypt message content if encryption is enabled
-		if s.encryptor != nil {
-			content, err := s.encryptor.DecryptString(messages[i].Content)
-			if err != nil {
-				return nil, err
-			}
-			messages[i].Content = content
-		}
+		messages[i].Content = decryptedContent
 	}
 
 	return messages, nil
@@ -364,4 +387,31 @@ func (s *MessageService) BatchUpdateMessageStatus(messageIDs []uuid.UUID, userID
 	query = s.db.Rebind(query)
 	_, err = s.db.Exec(query, args...)
 	return err
+}
+
+func (s *MessageService) AddReaction(messageID, userID uuid.UUID, emoji string) error {
+	_, err := s.db.Exec(`
+		INSERT INTO message_reactions (message_id, user_id, emoji)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (message_id, user_id, emoji) DO NOTHING
+	`, messageID, userID, emoji)
+	return err
+}
+
+func (s *MessageService) RemoveReaction(messageID, userID uuid.UUID, emoji string) error {
+	_, err := s.db.Exec(`
+		DELETE FROM message_reactions
+		WHERE message_id = $1 AND user_id = $2 AND emoji = $3
+	`, messageID, userID, emoji)
+	return err
+}
+
+func (s *MessageService) GetMessageReactions(messageID uuid.UUID) ([]MessageReaction, error) {
+	var reactions []MessageReaction
+	err := s.db.Select(&reactions, `
+		SELECT * FROM message_reactions
+		WHERE message_id = $1
+		ORDER BY created_at ASC
+	`, messageID)
+	return reactions, err
 }

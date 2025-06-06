@@ -3,8 +3,8 @@ export interface User {
   username: string;
   email: string;
   phone: string;
-  status?: string;
-  last_seen?: string;
+  status: string;
+  last_seen: string | null;
   is_online: boolean;
   is_active: boolean;
   created_at: string;
@@ -49,18 +49,35 @@ export interface Conversation {
   unread_count: number;
 }
 
+export interface MessageReaction {
+  id: string;
+  message_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: string;
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
   sender_id: string;
+  sender_username: string;
   sender?: User;
+  reply_to_id?: string;
+  reply_to?: Message;
   content: string;
   type: 'text' | 'image' | 'video' | 'audio' | 'file' | 'location';
-  metadata?: Record<string, any>;
+  media_url?: string;
+  media_thumbnail_url?: string;
+  media_size?: number;
+  media_duration?: number;
   created_at: string;
   updated_at: string;
   read_by: string[];
   status?: 'sending' | 'sent' | 'delivered' | 'read';
+  reactions?: MessageReaction[];
+  is_edited: boolean;
+  is_deleted: boolean;
 }
 
 export interface CreateMessageInput {
