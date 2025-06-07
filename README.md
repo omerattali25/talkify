@@ -12,19 +12,11 @@ Talkify is a robust chat application backend built with Go, featuring PostgreSQL
 - **Messaging Capabilities**
   - Direct messaging
   - Group chats
-  - Multiple message types support:
-    - Text messages
-    - Image sharing
-    - Video sharing
-    - Audio messages
-    - File attachments
-    - Location sharing
+  - Text messages
 
 - **Advanced Chat Features**
   - Message read receipts
   - Message editing and deletion
-  - Reply to specific messages
-  - Media preview and thumbnails
   - Message status tracking (sent/delivered/read)
 
 - **Conversation Management**
